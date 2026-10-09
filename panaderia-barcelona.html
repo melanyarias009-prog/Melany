@@ -104,7 +104,7 @@ input:hover,select:hover{border-color:var(--muted)}
 .money-wrap input{border:0;outline:0;background:transparent;height:100%;padding:0 10px 0 4px;width:100%;min-width:0;text-align:right}
 .money-wrap.big{height:46px;font-size:1.25rem}
 .formrow{display:grid;gap:10px;align-items:end}
-.f-vale{grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto}
+.f-vale{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) auto}
 .f-eg{grid-template-columns:minmax(0,1.3fr) minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr) auto}
 .f-eg.prest{grid-template-columns:minmax(0,1.3fr) minmax(0,1.4fr) 90px minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr) auto}
 .f-tr{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1.6fr) auto}
@@ -380,19 +380,16 @@ function ctxTurno(f,n){return 'Jornada '+fechaMed(f||UI.fecha)+' · Turno '+(n||
 function turnoRango(f,n){const a=addDays(f,-1);return n===1?fechaCorta(a)+' 10:00 pm – '+fechaCorta(f)+' 6:00 am':n===2?fechaCorta(f)+' 6:00 am – 2:00 pm':fechaCorta(f)+' 2:00 pm – 10:00 pm';}
 function neto(k,v){const p=Number(S.config.comision[k]||0);return Math.round((v||0)*(1-p/100));}
 function ingresosDinero(t){return (t.ingresos.davivienda||0)+(t.ingresos.bancolombia||0)+(t.ingresos.bold||0)+(t.ingresos.efectivo||0);}
-/* Los vales cuentan como ingreso del flujo diario (y en el arqueo se restan del efectivo esperado) */
-function ingresosTotal(t){return ingresosDinero(t)+sum(t.vales,v=>v.valor);}
 function egnomDe(f,n){return Object.values(S.egnom).filter(e=>e.jornada===f&&(n===undefined?true:e.turno===n));}
 function arqueo(f,n){
   const t=turnoLeer(f,n),base=turnoBase(t),efectivo=t.ingresos.efectivo||0;
   const egCaja=sum(t.egresos.filter(e=>e.origen==='caja'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='caja'),e=>e.valor);
   const trOut=sum(t.traslados.filter(x=>x.origen==='caja'),x=>x.valor);
   const trIn=sum(t.traslados.filter(x=>x.destino==='caja'),x=>x.valor);
-  const vales=sum(t.vales,v=>v.valor);
-  const esperado=base+efectivo-vales-egCaja-trOut+trIn;
+  const esperado=base+efectivo-egCaja-trOut+trIn;
   const contado=t.contado;
   const aFuerte=(t.cerrado&&contado!=null)?Math.max(0,contado-base):0;
-  return {base,efectivo,vales,egCaja,trOut,trIn,esperado,contado,dif:contado==null?null:contado-esperado,aFuerte,cerrado:t.cerrado};
+  return {base,efectivo,egCaja,trOut,trIn,esperado,contado,dif:contado==null?null:contado-esperado,aFuerte,cerrado:t.cerrado};
 }
 function egresosTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos,e=>e.valor)+sum(egnomDe(f,n),e=>e.valor);}
 
@@ -434,7 +431,7 @@ function saldoWorker(wid,C){return sum(C[wid]||[],x=>x.monto)-descontado(wid);}
 function deudasHoy(C){return sum(Object.keys(S.workers),id=>Math.max(0,saldoWorker(id,C)));}
 
 /* ───────── Descripciones para el registro ───────── */
-function dVale(v){return nombreW(v.workerId)+' · '+fmt(v.valor);}
+function dVale(v){return nombreW(v.workerId)+' · '+fmt(v.valor)+(v.origen?' · sale de '+lugar(v.origen):'');}
 function dEgreso(e){return CATS[e.cat]+(e.cat==='prestamo'?' · '+nombreW(e.workerId)+' · '+(e.cuotas||1)+' cuota(s)':'')+(e.desc?' · '+e.desc:'')+' · '+fmt(e.valor)+' · desde '+lugar(e.origen);}
 function dTraslado(x){return lugar(x.origen)+' → '+lugar(x.destino)+' · '+fmt(x.valor)+(x.desc?' · '+x.desc:'');}
 
@@ -496,20 +493,21 @@ function cIngresos(t){
       (p>0?'<small>Llega al banco: '+fmt(neto(d.k,v))+' (comisión '+p+'%)</small>':'<small>Suma a '+esc(lugar(d.cuenta))+'</small>')+'</label>';}).join('');
   return '<section class="card"><div class="card-h"><h3>Ingresos del turno</h3><p>Totales del turno por forma de pago</p></div><div class="ing">'+fl+
     '<label class="fld"><span>Efectivo</span>'+money('in-efectivo','data-commit="ingreso" data-k="efectivo"',fmtIn(t.ingresos.efectivo))+'<small>Suma a la Caja</small></label></div>'+
-    '<div class="sub">Ingresos del turno (con '+fmt(sum(t.vales,v=>v.valor))+' en vales): <b class="num">'+fmt(ingresosTotal(t))+'</b></div></section>';
+    '<div class="sub">Ingresos en dinero del turno: <b class="num">'+fmt(ingresosDinero(t))+'</b></div></section>';
 }
 function cVales(t){
   const ed=UI.edit&&UI.edit.kind==='vale';
   const nv=t.vales.length;
-  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Puedes agregar todos los que necesites · suman como ingreso, se restan del efectivo en el arqueo y se descuentan en la quincena</p></div>'+
+  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Solo para nómina: no suman a los ingresos ni afectan el arqueo · puedes agregar todos los que necesites</p></div>'+
     '<div class="formrow f-vale"><label class="fld"><span>Trabajador</span><select id="d-vale-w" data-draft="vale-w">'+optWorkers(dv('vale-w'))+'</select></label>'+
     '<label class="fld"><span>Valor</span>'+money('d-vale-v','data-draft="vale-v" data-enter="vale-guardar"',dv('vale-v'))+'</label>'+
+    '<label class="fld"><span>De dónde sale</span><select id="d-vale-o" data-draft="vale-o">'+optLugares(dv('vale-o'),true)+'</select></label>'+
     '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro vale':'+ Agregar vale'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
   if(t.vales.length){
-    h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
-      t.vales.map(v=>'<tr class="'+(ed&&UI.edit.id===v.id?'editing':'')+'"><td>'+esc(nombreW(v.workerId))+'</td><td class="m">'+fmt(v.valor)+'</td><td class="act">'+delBtns('vale',v.id)+'</td></tr>').join('')+
-      '</tbody><tfoot><tr><td>Total vales</td><td class="m">'+fmt(sum(t.vales,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
-  }else h+='<div class="empty">No hay vales en este turno. Elige el trabajador, escribe el valor y pulsa Agregar (o Enter); el formulario queda listo para el siguiente vale.</div>';
+    h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th>De dónde sale</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
+      t.vales.map(v=>'<tr class="'+(ed&&UI.edit.id===v.id?'editing':'')+'"><td>'+esc(nombreW(v.workerId))+'</td><td>'+(v.origen?esc(lugar(v.origen)):'<span class="muted">—</span>')+'</td><td class="m">'+fmt(v.valor)+'</td><td class="act">'+delBtns('vale',v.id)+'</td></tr>').join('')+
+      '</tbody><tfoot><tr><td colspan="2">Total vales</td><td class="m">'+fmt(sum(t.vales,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
+  }else h+='<div class="empty">No hay vales en este turno. Elige el trabajador, el valor y de dónde sale el dinero, y pulsa Agregar (o Enter); el formulario queda listo para el siguiente vale.</div>';
   return h+'</section>';
 }
 function cEgresos(t){
@@ -565,7 +563,6 @@ function cArqueo(f,n,t){
   let h='<section class="card"><div class="card-h"><h3>Arqueo · Turno '+n+'</h3>'+(t.cerrado?'<span class="chip good">Cerrado</span>':'<span class="chip warn">Abierto</span>')+'</div>'+
     '<dl class="calc"><div><dt>Base</dt><dd>'+fmt(A.base)+'</dd></div>'+
     '<div><dt>+ Ventas en efectivo</dt><dd>'+fmt(A.efectivo)+'</dd></div>'+
-    '<div><dt>− Vales de consumo</dt><dd>'+fmt(A.vales)+'</dd></div>'+
     '<div><dt>− Egresos pagados desde la Caja</dt><dd>'+fmt(A.egCaja)+'</dd></div>'+
     '<div><dt>− Traslados que salen de la Caja</dt><dd>'+fmt(A.trOut)+'</dd></div>'+
     '<div><dt>+ Traslados que entran a la Caja</dt><dd>'+fmt(A.trIn)+'</dd></div>'+
@@ -580,22 +577,20 @@ function cArqueo(f,n,t){
   return h+'</section>';
 }
 function cResumen(f){
-  let tDin=0,tVal=0,tEg=0;
-  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),din=ingresosDinero(t),val=sum(t.vales,v=>v.valor),ing=din+val,eg=egresosTurno(f,n);
-    tDin+=din;tVal+=val;tEg+=eg;
+  let tIng=0,tEg=0;
+  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),ing=ingresosDinero(t),eg=egresosTurno(f,n);
+    tIng+=ing;tEg+=eg;
     const arq=!t.cerrado?'<span class="chip">'+(tocado(t)?'Sin cerrar':'—')+'</span>':A.dif>0?'<span class="chip good">Sobrante '+fmt(A.dif)+'</span>':A.dif<0?'<span class="chip bad">Faltante '+fmt(-A.dif)+'</span>':'<span class="chip">Sin diferencia</span>';
-    return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(din)+'</td><td class="m">'+fmt(val)+'</td><td class="m"><b>'+fmt(ing)+'</b></td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(ing-eg)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td></tr>';}).join('');
+    return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(ing)+'</td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(ing-eg)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td></tr>';}).join('');
   const fuera=egnomDe(f).filter(e=>e.turno==null);const egF=sum(fuera,e=>e.valor);tEg+=egF;
-  const tIng=tDin+tVal;
-  const filaF=fuera.length?'<tr><td>Fuera de turno <span class="muted small">Nómina pagada desde cuentas</span></td><td class="m">—</td><td class="m">—</td><td class="m">—</td><td class="m">'+fmt(egF)+'</td><td class="m">'+fmt(-egF)+'</td><td></td><td></td></tr>':'';
+  const filaF=fuera.length?'<tr><td>Fuera de turno <span class="muted small">Nómina pagada desde cuentas</span></td><td class="m">—</td><td class="m">'+fmt(egF)+'</td><td class="m">'+fmt(-egF)+'</td><td></td><td></td></tr>':'';
   return '<div class="sec-title"><h2>Resumen de la jornada</h2><span class="muted">'+fechaLarga(f)+'</span></div>'+
     '<section class="card"><div class="kpis">'+
-    '<div class="kpi"><small>Total de ingresos</small><b>'+fmt(tIng)+'</b><em>Dinero '+fmt(tDin)+' + vales '+fmt(tVal)+'</em></div>'+
-    '<div class="kpi"><small>Vales de consumo</small><b>'+fmt(tVal)+'</b><em>Incluidos en los ingresos</em></div>'+
+    '<div class="kpi"><small>Total de ingresos</small><b>'+fmt(tIng)+'</b><em>Datáfonos + efectivo</em></div>'+
     '<div class="kpi"><small>Egresos</small><b>'+fmt(tEg)+'</b></div>'+
     '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos</em></div></div>'+
-    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Datáfonos + efectivo</th><th class="m">Vales</th><th class="m">Total ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
-    '</tbody><tfoot><tr><td>Total jornada</td><td class="m">'+fmt(tDin)+'</td><td class="m">'+fmt(tVal)+'</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
+    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
+    '</tbody><tfoot><tr><td>Total jornada</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
 }
 
 /* ── Nómina ── */
@@ -737,10 +732,10 @@ function calcInforme(desde,hasta){
     Object.keys(R.ing).forEach(k=>R.ing[k]+=t.ingresos[k]||0);
     const v=sum(t.vales,x=>x.valor);R.vales+=v;
     t.egresos.forEach(e=>R.eg[e.cat]+=e.valor);
-    const D=dia(j.fecha);D.ing+=ingresosTotal(t);D.vales+=v;D.eg+=sum(t.egresos,e=>e.valor);
+    const D=dia(j.fecha);D.ing+=ingresosDinero(t);D.vales+=v;D.eg+=sum(t.egresos,e=>e.valor);
   });});
   Object.values(S.egnom).forEach(e=>{if(e.jornada<desde||e.jornada>hasta)return;R.eg.nomina+=e.valor;dia(e.jornada).eg+=e.valor;});
-  R.totDin=sum(Object.values(R.ing));R.totIng=R.totDin+R.vales;R.totEg=sum(Object.values(R.eg));
+  R.totIng=sum(Object.values(R.ing));R.totEg=sum(Object.values(R.eg));
   return R;
 }
 function vInf(){
@@ -753,22 +748,22 @@ function vInf(){
   else sel='<label class="fld"><span>Mes</span><input type="month" id="d-inf-mes" data-draft="inf-mes" data-rerender="1" value="'+esc(dv('inf-mes',hoy().slice(0,7)))+'"></label>';
   let h='<div class="bar"><div class="seg" role="group" aria-label="Periodo">'+tipos.map(t=>'<button data-act="inf-tipo" data-v="'+t[0]+'" aria-pressed="'+(r.tipo===t[0])+'">'+t[1]+'</button>').join('')+'</div>'+sel+'</div>';
   h+='<div class="sec-title" style="margin-top:4px"><h2>'+esc(r.titulo)+'</h2>'+(r.desde!==r.hasta?'<span class="muted">Jornadas del '+fechaMed(r.desde)+' al '+fechaMed(r.hasta)+'</span>':'')+'</div>';
-  h+='<div class="kpis"><div class="kpi"><small>Total de ingresos</small><b>'+fmt(R.totIng)+'</b><em>Dinero '+fmt(R.totDin)+' + vales '+fmt(R.vales)+'</em></div>'+
-    '<div class="kpi"><small>Vales de consumo</small><b>'+fmt(R.vales)+'</b><em>Incluidos en los ingresos</em></div>'+
+  h+='<div class="kpis"><div class="kpi"><small>Total de ingresos</small><b>'+fmt(R.totIng)+'</b><em>Datáfonos + efectivo</em></div>'+
     '<div class="kpi"><small>Total de egresos</small><b>'+fmt(R.totEg)+'</b></div>'+
     '<div class="kpi"><small>Ingresos − egresos</small><b class="'+(R.totIng-R.totEg<0?'neg':'')+'">'+fmt(R.totIng-R.totEg)+'</b></div>'+
-    '<div class="kpi"><small>Deudas de trabajadores</small><b>'+fmt(deudasHoy(C))+'</b><em>Saldo pendiente a hoy</em></div></div>';
+    '<div class="kpi"><small>Deudas de trabajadores</small><b>'+fmt(deudasHoy(C))+'</b><em>Saldo pendiente a hoy</em></div>'+
+    '<div class="kpi"><small>Vales de consumo</small><b>'+fmt(R.vales)+'</b><em>Solo nómina, no suma a ingresos</em></div></div>';
   const comAny=DATAFONOS.some(d=>Number(S.config.comision[d.k])>0);
   h+='<div class="icols"><section class="card"><div class="card-h"><h3>Ingresos por forma de pago</h3></div><div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Forma de pago</th><th class="m">Total</th>'+(comAny?'<th class="m">Llega al banco</th>':'')+'</tr></thead><tbody>'+
     DATAFONOS.map(d=>'<tr><td>'+d.nombre+'</td><td class="m">'+fmt(R.ing[d.k])+'</td>'+(comAny?'<td class="m">'+fmt(neto(d.k,R.ing[d.k]))+'</td>':'')+'</tr>').join('')+
     '<tr><td>Efectivo</td><td class="m">'+fmt(R.ing.efectivo)+'</td>'+(comAny?'<td class="m">'+fmt(R.ing.efectivo)+'</td>':'')+'</tr>'+
-    '<tr><td>Vales de consumo</td><td class="m">'+fmt(R.vales)+'</td>'+(comAny?'<td class="m muted">—</td>':'')+'</tr></tbody><tfoot><tr><td>Total ingresos</td><td class="m">'+fmt(R.totIng)+'</td>'+(comAny?'<td></td>':'')+'</tr></tfoot></table></div></section>';
+    '</tbody><tfoot><tr><td>Total ingresos</td><td class="m">'+fmt(R.totIng)+'</td>'+(comAny?'<td></td>':'')+'</tr></tfoot></table></div></section>';
   h+='<section class="card"><div class="card-h"><h3>Egresos por categoría</h3></div><div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Categoría</th><th class="m">Total</th></tr></thead><tbody>'+
     Object.keys(CATS).map(c=>'<tr><td>'+CATS[c]+'</td><td class="m">'+fmt(R.eg[c])+'</td></tr>').join('')+'</tbody><tfoot><tr><td>Total egresos</td><td class="m">'+fmt(R.totEg)+'</td></tr></tfoot></table></div></section></div>';
   if(r.desde!==r.hasta){
     const ds=Object.keys(R.dias).sort();
-    h+='<section class="card" style="margin-top:14px"><div class="card-h"><h3>Detalle por jornada</h3></div>'+(ds.length?'<div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Jornada</th><th class="m">Ingresos</th><th class="m">Vales</th><th class="m">Egresos</th><th class="m">Saldo</th></tr></thead><tbody>'+
-      ds.map(f=>{const D=R.dias[f];return '<tr class="click" data-act="ir-jornada" data-f="'+f+'"><td>'+fechaLarga(f)+'</td><td class="m">'+fmt(D.ing)+'</td><td class="m">'+fmt(D.vales)+'</td><td class="m">'+fmt(D.eg)+'</td><td class="m">'+fmt(D.ing-D.eg)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">No hay registros en este periodo.</div>')+'</section>';
+    h+='<section class="card" style="margin-top:14px"><div class="card-h"><h3>Detalle por jornada</h3></div>'+(ds.length?'<div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Jornada</th><th class="m">Ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th class="m">Vales (nómina)</th></tr></thead><tbody>'+
+      ds.map(f=>{const D=R.dias[f];return '<tr class="click" data-act="ir-jornada" data-f="'+f+'"><td>'+fechaLarga(f)+'</td><td class="m">'+fmt(D.ing)+'</td><td class="m">'+fmt(D.eg)+'</td><td class="m">'+fmt(D.ing-D.eg)+'</td><td class="m muted">'+fmt(D.vales)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">No hay registros en este periodo.</div>')+'</section>';
   }
   return h;
 }
@@ -803,13 +798,14 @@ function vCfg(){
 /* ───────── Acciones ───────── */
 function err(k,m){UI.err[k]=m;render();}
 function guardarVale(){
-  const w=dv('vale-w'),v=parseMoney(dv('vale-v'));
+  const w=dv('vale-w'),v=parseMoney(dv('vale-v')),o=dv('vale-o');
   if(!w)return err('vale','Elige el trabajador.');
   if(!v)return err('vale','Escribe el valor del vale.');
+  if(!o)return err('vale','Elige de dónde sale el dinero del vale.');
   const T=turnoMut(),ctx=ctxTurno();
-  if(UI.edit&&UI.edit.kind==='vale'){const r=T.vales.find(x=>x.id===UI.edit.id);if(r){const an=dVale(r);r.workerId=w;r.valor=v;log('Editó','Vale · '+ctx,an,dVale(r));}UI.edit=null;}
-  else{const r={id:uid(),workerId:w,valor:v};T.vales.push(r);log('Creó','Vale · '+ctx,'',dVale(r));}
-  clearDrafts('vale-');UI.err.vale=null;saveJornada(UI.fecha);UI.focus='d-vale-w';render();
+  if(UI.edit&&UI.edit.kind==='vale'){const r=T.vales.find(x=>x.id===UI.edit.id);if(r){const an=dVale(r);r.workerId=w;r.valor=v;r.origen=o;log('Editó','Vale · '+ctx,an,dVale(r));}UI.edit=null;}
+  else{const r={id:uid(),workerId:w,valor:v,origen:o};T.vales.push(r);log('Creó','Vale · '+ctx,'',dVale(r));}
+  delete UI.drafts['vale-w'];delete UI.drafts['vale-v'];UI.err.vale=null;saveJornada(UI.fecha);UI.focus='d-vale-w';render();
 }
 function guardarEgreso(){
   const cat=dv('eg-cat','produccion'),v=parseMoney(dv('eg-v')),o=dv('eg-o','caja'),desc=dv('eg-desc').trim();
@@ -836,7 +832,7 @@ function guardarTraslado(){
 }
 function editar(kind,id){
   const t=turnoLeer(UI.fecha,UI.turno);UI.confirm=null;
-  if(kind==='vale'){const r=t.vales.find(x=>x.id===id);if(!r)return;UI.drafts['vale-w']=r.workerId;UI.drafts['vale-v']=fmtIn(r.valor);UI.focus='d-vale-v';}
+  if(kind==='vale'){const r=t.vales.find(x=>x.id===id);if(!r)return;UI.drafts['vale-w']=r.workerId;UI.drafts['vale-v']=fmtIn(r.valor);UI.drafts['vale-o']=r.origen||'';UI.focus='d-vale-v';}
   if(kind==='egreso'){const r=t.egresos.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'eg-cat':r.cat,'eg-v':fmtIn(r.valor),'eg-o':r.origen,'eg-desc':r.desc||'','eg-w':r.workerId||'','eg-cuotas':String(r.cuotas||1)});UI.focus='d-eg-v';}
   if(kind==='traslado'){const r=t.traslados.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'tr-o':r.origen,'tr-d':r.destino,'tr-v':fmtIn(r.valor),'tr-desc':r.desc||''});UI.focus='d-tr-v';}
   UI.edit={kind:kind,id:id};render();
