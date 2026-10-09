@@ -496,15 +496,16 @@ function cIngresos(t){
 }
 function cVales(t){
   const ed=UI.edit&&UI.edit.kind==='vale';
-  let h='<section class="card"><div class="card-h"><h3>Vales de consumo</h3><p>Venta sin dinero · se descuenta al trabajador en la quincena</p></div>'+
+  const nv=t.vales.length;
+  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Puedes agregar todos los vales que necesites en el turno · se descuentan en la quincena</p></div>'+
     '<div class="formrow f-vale"><label class="fld"><span>Trabajador</span><select id="d-vale-w" data-draft="vale-w">'+optWorkers(dv('vale-w'))+'</select></label>'+
     '<label class="fld"><span>Valor</span>'+money('d-vale-v','data-draft="vale-v" data-enter="vale-guardar"',dv('vale-v'))+'</label>'+
-    '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':'Agregar vale')+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
+    '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro vale':'+ Agregar vale'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
   if(t.vales.length){
     h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
       t.vales.map(v=>'<tr class="'+(ed&&UI.edit.id===v.id?'editing':'')+'"><td>'+esc(nombreW(v.workerId))+'</td><td class="m">'+fmt(v.valor)+'</td><td class="act">'+delBtns('vale',v.id)+'</td></tr>').join('')+
       '</tbody><tfoot><tr><td>Total vales</td><td class="m">'+fmt(sum(t.vales,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
-  }else h+='<div class="empty">No hay vales en este turno.</div>';
+  }else h+='<div class="empty">No hay vales en este turno. Elige el trabajador, escribe el valor y pulsa Agregar (o Enter); el formulario queda listo para el siguiente vale.</div>';
   return h+'</section>';
 }
 function cEgresos(t){
