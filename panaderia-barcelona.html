@@ -277,7 +277,8 @@ function fechaLarga(s){const d=parseYmd(s);return DIAS[d.getDay()]+' '+d.getDate
 function fechaCorta(s){const d=parseYmd(s);return d.getDate()+' '+MESES[d.getMonth()].slice(0,3);}
 function fechaMed(s){const d=parseYmd(s);return d.getDate()+' '+MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear();}
 function horaDe(iso){if(!iso)return '';const d=new Date(iso);let h=d.getHours();const m=pad(d.getMinutes());const ap=h>=12?'pm':'am';h=h%12||12;return fechaCorta(ymd(d))+' '+h+':'+m+' '+ap;}
-function jornadaActual(){const d=new Date();if(d.getHours()<22)d.setDate(d.getDate()-1);return ymd(d);}
+/* La jornada lleva la fecha del día en que termina: jornada "2" = día 1 10:00 pm → día 2 10:00 pm */
+function jornadaActual(){const d=new Date();if(d.getHours()>=22)d.setDate(d.getDate()+1);return ymd(d);}
 function turnoActual(){const h=new Date().getHours();return (h>=22||h<6)?1:(h<14?2:3);}
 function ultimoDia(y,m){return new Date(y,m,0).getDate();}
 /* Quincenas */
@@ -376,7 +377,7 @@ function turnoLeer(f,n){const j=S.jornadas[f];return j?j.turnos[n]:nuevoTurno();
 function turnoMut(){return getJornada(UI.fecha,true).turnos[UI.turno];}
 function turnoBase(t){return t.base!=null?t.base:S.config.base;}
 function ctxTurno(f,n){return 'Jornada '+fechaMed(f||UI.fecha)+' · Turno '+(n||UI.turno);}
-function turnoRango(f,n){const s=addDays(f,1);return n===1?fechaCorta(f)+' 10:00 pm – '+fechaCorta(s)+' 6:00 am':n===2?fechaCorta(s)+' 6:00 am – 2:00 pm':fechaCorta(s)+' 2:00 pm – 10:00 pm';}
+function turnoRango(f,n){const a=addDays(f,-1);return n===1?fechaCorta(a)+' 10:00 pm – '+fechaCorta(f)+' 6:00 am':n===2?fechaCorta(f)+' 6:00 am – 2:00 pm':fechaCorta(f)+' 2:00 pm – 10:00 pm';}
 function neto(k,v){const p=Number(S.config.comision[k]||0);return Math.round((v||0)*(1-p/100));}
 function ingresosDinero(t){return (t.ingresos.davivienda||0)+(t.ingresos.bancolombia||0)+(t.ingresos.bold||0)+(t.ingresos.efectivo||0);}
 function egnomDe(f,n){return Object.values(S.egnom).filter(e=>e.jornada===f&&(n===undefined?true:e.turno===n));}
@@ -475,12 +476,12 @@ function errHTML(k){return UI.err[k]?'<div class="err">'+esc(UI.err[k])+'</div>'
 /* ── Flujo diario ── */
 function estadoTurno(f,n){const t=turnoLeer(f,n);if(t.cerrado)return '<span class="chip good">Cerrado</span>';if(tocado(t))return '<span class="chip warn">Abierto</span>';return '<span class="chip">Sin registros</span>';}
 function vFlujo(){
-  const f=UI.fecha,n=UI.turno,t=turnoLeer(f,n),sig=addDays(f,1);
+  const f=UI.fecha,n=UI.turno,t=turnoLeer(f,n),ant=addDays(f,-1);
   let h='<div class="bar"><div class="jnav"><button class="btn ghost icon" data-act="j-prev" aria-label="Jornada anterior">‹</button>'+
     '<input type="date" id="f-fecha" data-commit="fecha" value="'+f+'" aria-label="Fecha de la jornada">'+
     '<button class="btn ghost icon" data-act="j-next" aria-label="Jornada siguiente">›</button>'+
     (f!==jornadaActual()?'<button class="btn sm" data-act="j-hoy">Jornada actual</button>':'')+'</div>'+
-    '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(f)+' 10:00 pm → '+fechaCorta(sig)+' 10:00 pm</p></div></div>';
+    '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(ant)+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm</p></div></div>';
   h+='<div class="turns" role="group" aria-label="Turnos">'+[1,2,3].map(k=>'<button class="turn" data-act="turno" data-n="'+k+'" aria-pressed="'+(k===n)+'"><span><b>Turno '+k+'</b><small>'+turnoRango(f,k)+'</small></span>'+estadoTurno(f,k)+'</button>').join('')+'</div>';
   h+='<div class="fgrid"><div class="stack">'+cIngresos(t)+cVales(t)+cEgresos(t)+cTraslados(t)+'</div><aside class="side">'+cArqueo(f,n,t)+'</aside></div>';
   h+=cResumen(f);
