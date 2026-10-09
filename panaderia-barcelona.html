@@ -498,10 +498,10 @@ function cIngresos(t){
 function cVales(t){
   const ed=UI.edit&&UI.edit.kind==='vale';
   const nv=t.vales.length;
-  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Solo para nómina: no suman a los ingresos ni afectan el arqueo · puedes agregar todos los que necesites</p></div>'+
+  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Solo se descuentan en la nómina · no tocan ingresos, arqueo, Caja fuerte ni cuentas</p></div>'+
     '<div class="formrow f-vale"><label class="fld"><span>Trabajador</span><select id="d-vale-w" data-draft="vale-w">'+optWorkers(dv('vale-w'))+'</select></label>'+
     '<label class="fld"><span>Valor</span>'+money('d-vale-v','data-draft="vale-v" data-enter="vale-guardar"',dv('vale-v'))+'</label>'+
-    '<label class="fld"><span>De dónde sale</span><select id="d-vale-o" data-draft="vale-o">'+optLugares(dv('vale-o'),true)+'</select></label>'+
+    '<label class="fld"><span>De dónde sale (informativo)</span><select id="d-vale-o" data-draft="vale-o">'+optLugares(dv('vale-o'),true)+'</select></label>'+
     '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro vale':'+ Agregar vale'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
   if(t.vales.length){
     h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th>De dónde sale</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
