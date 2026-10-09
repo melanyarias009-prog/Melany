@@ -391,6 +391,7 @@ function arqueo(f,n){
   const aFuerte=(t.cerrado&&contado!=null)?Math.max(0,contado-base):0;
   return {base,efectivo,egCaja,trOut,trIn,esperado,contado,dif:contado==null?null:contado-esperado,aFuerte,cerrado:t.cerrado};
 }
+function egresosCajaTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos.filter(e=>e.origen==='caja'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='caja'),e=>e.valor);}
 function egresosTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos,e=>e.valor)+sum(egnomDe(f,n),e=>e.valor);}
 
 function calcSaldos(){
@@ -498,16 +499,16 @@ function cIngresos(t){
 function cVales(t){
   const ed=UI.edit&&UI.edit.kind==='vale';
   const nv=t.vales.length;
-  let h='<section class="card"><div class="card-h"><h3>Vales de consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' vale':' vales')+'</span>':'')+'</h3><p>Solo se descuentan en la nómina · no tocan ingresos, arqueo, Caja fuerte ni cuentas</p></div>'+
+  let h='<section class="card"><div class="card-h"><h3>Consumo'+(nv?' <span class="chip acc">'+nv+(nv===1?' consumo':' consumos')+'</span>':'')+'</h3><p>Solo se descuentan en la nómina · no tocan ingresos, arqueo, Caja fuerte ni cuentas</p></div>'+
     '<div class="formrow f-vale"><label class="fld"><span>Trabajador</span><select id="d-vale-w" data-draft="vale-w">'+optWorkers(dv('vale-w'))+'</select></label>'+
     '<label class="fld"><span>Valor</span>'+money('d-vale-v','data-draft="vale-v" data-enter="vale-guardar"',dv('vale-v'))+'</label>'+
     '<label class="fld"><span>De dónde sale (informativo)</span><select id="d-vale-o" data-draft="vale-o">'+optLugares(dv('vale-o'),true)+'</select></label>'+
-    '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro vale':'+ Agregar vale'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
+    '<div class="btnrow"><button class="btn primary" data-act="vale-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro consumo':'+ Agregar consumo'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('vale');
   if(t.vales.length){
     h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th>De dónde sale</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
       t.vales.map(v=>'<tr class="'+(ed&&UI.edit.id===v.id?'editing':'')+'"><td>'+esc(nombreW(v.workerId))+'</td><td>'+(v.origen?esc(lugar(v.origen)):'<span class="muted">—</span>')+'</td><td class="m">'+fmt(v.valor)+'</td><td class="act">'+delBtns('vale',v.id)+'</td></tr>').join('')+
-      '</tbody><tfoot><tr><td colspan="2">Total vales</td><td class="m">'+fmt(sum(t.vales,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
-  }else h+='<div class="empty">No hay vales en este turno. Elige el trabajador, el valor y de dónde sale el dinero, y pulsa Agregar (o Enter); el formulario queda listo para el siguiente vale.</div>';
+      '</tbody><tfoot><tr><td colspan="2">Total consumo</td><td class="m">'+fmt(sum(t.vales,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
+  }else h+='<div class="empty">No hay consumos en este turno. Elige el trabajador, el valor y de dónde sale el dinero, y pulsa Agregar (o Enter); el formulario queda listo para el siguiente consumo.</div>';
   return h+'</section>';
 }
 function cEgresos(t){
@@ -578,19 +579,17 @@ function cArqueo(f,n,t){
 }
 function cResumen(f){
   let tIng=0,tEg=0;
-  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),ing=ingresosDinero(t),eg=egresosTurno(f,n);
+  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),ing=ingresosDinero(t),eg=egresosCajaTurno(f,n);
     tIng+=ing;tEg+=eg;
     const arq=!t.cerrado?'<span class="chip">'+(tocado(t)?'Sin cerrar':'—')+'</span>':A.dif>0?'<span class="chip good">Sobrante '+fmt(A.dif)+'</span>':A.dif<0?'<span class="chip bad">Faltante '+fmt(-A.dif)+'</span>':'<span class="chip">Sin diferencia</span>';
     return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(ing)+'</td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(ing-eg)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td></tr>';}).join('');
-  const fuera=egnomDe(f).filter(e=>e.turno==null);const egF=sum(fuera,e=>e.valor);tEg+=egF;
-  const filaF=fuera.length?'<tr><td>Fuera de turno <span class="muted small">Nómina pagada desde cuentas</span></td><td class="m">—</td><td class="m">'+fmt(egF)+'</td><td class="m">'+fmt(-egF)+'</td><td></td><td></td></tr>':'';
-  return '<div class="sec-title"><h2>Resumen de la jornada</h2><span class="muted">'+fechaLarga(f)+'</span></div>'+
+  return '<div class="sec-title"><h2>Total de venta</h2><span class="muted">'+fechaLarga(f)+'</span></div>'+
     '<section class="card"><div class="kpis">'+
     '<div class="kpi"><small>Total de ingresos</small><b>'+fmt(tIng)+'</b><em>Datáfonos + efectivo</em></div>'+
-    '<div class="kpi"><small>Egresos</small><b>'+fmt(tEg)+'</b></div>'+
-    '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos</em></div></div>'+
-    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
-    '</tbody><tfoot><tr><td>Total jornada</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
+    '<div class="kpi"><small>Egresos de la Caja</small><b>'+fmt(tEg)+'</b><em>Solo lo pagado desde la Caja</em></div>'+
+    '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos de la Caja</em></div></div>'+
+    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos de la Caja</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+
+    '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
 }
 
 /* ── Nómina ── */
@@ -637,7 +636,7 @@ function vNomina(){
   const T={valor:sum(rows,r=>r.valor||0),deuda:sum(rows,r=>r.deuda||0),pago:sum(rows,r=>r.pago||0)};
   h+='</tbody><tfoot><tr><td></td><td>Totales</td><td></td><td class="m">'+fmt(T.valor)+'</td><td class="m">'+fmt(T.deuda)+'</td><td class="m">'+fmt(T.pago)+'</td><td></td><td></td></tr></tfoot></table></div>';
   if(!rows.length)h+='<div class="empty">No hay trabajadores activos.</div>';
-  h+='<p class="small muted" style="margin-top:10px">Deuda = vales de la quincena + cuotas de préstamos que tocan + saldos pendientes anteriores. Si la deuda supera el valor, se paga $0 y el resto pasa a la siguiente quincena.</p></section>';
+  h+='<p class="small muted" style="margin-top:10px">Deuda = consumo de la quincena + cuotas de préstamos que tocan + saldos pendientes anteriores. Si la deuda supera el valor, se paga $0 y el resto pasa a la siguiente quincena.</p></section>';
   return h;
 }
 function vModal(){
@@ -681,7 +680,7 @@ function vTrab(){
     '<div class="tw"><table class="tbl"><thead><tr><th>Nombre</th><th>Cédula</th><th>Estado</th><th class="m">Saldo pendiente</th></tr></thead><tbody>'+
     lista.map(w=>{const s=saldoWorker(w.id,C);return '<tr class="click'+(UI.wSel===w.id?' sel':'')+'" data-act="w-sel" data-id="'+w.id+'" tabindex="0"><td>'+esc(w.nombre)+'</td><td>'+(w.cedula?esc(w.cedula):'<span class="muted">—</span>')+'</td><td>'+chipW(w)+'</td><td class="m">'+(s>0?fmt(s):'<span class="muted">$0</span>')+'</td></tr>';}).join('')+
     '</tbody></table></div>'+(lista.length?'':'<div class="empty">No hay trabajadores con ese filtro.</div>')+'</section></div>';
-  h+='<div>'+(UI.wSel&&S.workers[UI.wSel]?vDetalle(S.workers[UI.wSel],C):'<section class="card"><div class="empty">Elige un trabajador de la lista para ver sus vales, préstamos, cuotas, descuentos y saldo pendiente.</div></section>')+'</div></div>';
+  h+='<div>'+(UI.wSel&&S.workers[UI.wSel]?vDetalle(S.workers[UI.wSel],C):'<section class="card"><div class="empty">Elige un trabajador de la lista para ver su consumo, préstamos, cuotas, descuentos y saldo pendiente.</div></section>')+'</div></div>';
   return h;
 }
 function chipW(w){if(!w.activo)return '<span class="chip">Retirado</span>';if(w.retiro&&!w.retiro.completado)return '<span class="chip acc">Último pago pendiente</span>';return '<span class="chip good">Activo</span>';}
@@ -703,11 +702,11 @@ function vDetalle(w,C){
       '<button class="btn primary sm" data-act="w-retirar-ok">Retirar con último pago</button>'+(saldo<=0?'<button class="btn sm" data-act="w-retirar-ya">Retirar ya (sin pago pendiente)</button>':'')+'<button class="btn sm" data-act="w-retirar-no">Cancelar</button>';
   }else h+='<button class="btn sm" data-act="w-retirar">Retirar trabajador</button>';
   h+='</div>';
-  h+='<div class="kpis" style="margin-top:16px"><div class="kpi"><small>Vales + préstamos</small><b>'+fmt(total)+'</b></div><div class="kpi"><small>Descontado en nómina</small><b>'+fmt(descT)+'</b></div>'+
+  h+='<div class="kpis" style="margin-top:16px"><div class="kpi"><small>Consumo + préstamos</small><b>'+fmt(total)+'</b></div><div class="kpi"><small>Descontado en nómina</small><b>'+fmt(descT)+'</b></div>'+
     '<div class="kpi"><small>Saldo pendiente</small><b class="'+(saldo>0?'neg':'')+'">'+fmt(saldo)+'</b>'+(saldo<0?'<em>Se le descontó de más</em>':'')+'</div>'+
     (w.activo?'<div class="kpi"><small>Se descuenta en '+qCorta(qAct)+'</small><b>'+fmt(proxima)+'</b></div>':'')+'</div></section>';
-  h+='<section class="card"><div class="card-h"><h3>Vales de consumo</h3><p>'+vales.length+' · '+fmt(sum(vales,v=>v.monto))+'</p></div>'+(vales.length?'<div class="tw"><table class="tbl"><thead><tr><th>Jornada</th><th>Turno</th><th>Se descuenta en</th><th class="m">Valor</th></tr></thead><tbody>'+
-    vales.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(v=>'<tr><td>'+fechaMed(v.fecha)+'</td><td>'+v.turno+'</td><td>'+qCorta(qId(qFromIdx(v.due)))+'</td><td class="m">'+fmt(v.monto)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin vales.</div>')+'</section>';
+  h+='<section class="card"><div class="card-h"><h3>Consumo</h3><p>'+vales.length+' · '+fmt(sum(vales,v=>v.monto))+'</p></div>'+(vales.length?'<div class="tw"><table class="tbl"><thead><tr><th>Jornada</th><th>Turno</th><th>Se descuenta en</th><th class="m">Valor</th></tr></thead><tbody>'+
+    vales.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(v=>'<tr><td>'+fechaMed(v.fecha)+'</td><td>'+v.turno+'</td><td>'+qCorta(qId(qFromIdx(v.due)))+'</td><td class="m">'+fmt(v.monto)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin consumos.</div>')+'</section>';
   const ps=Object.values(prest).sort((a,b)=>b.fecha.localeCompare(a.fecha));
   h+='<section class="card"><div class="card-h"><h3>Préstamos y cuotas</h3><p>'+ps.length+' · '+fmt(sum(ps,p=>p.total))+'</p></div>'+(ps.length?'<div class="tw"><table class="tbl"><thead><tr><th>Jornada</th><th>Descripción</th><th>Cuotas</th><th class="m">Valor</th></tr></thead><tbody>'+
     ps.map(p=>'<tr><td>'+fechaMed(p.fecha)+'</td><td>'+esc(p.desc||'—')+'</td><td class="small">'+p.cuotas.map(c=>c.cuota+'/'+c.de+' '+qCorta(qId(qFromIdx(c.due)))+': '+fmt(c.monto)).join('<br>')+'</td><td class="m">'+fmt(p.total)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin préstamos.</div>')+'</section>';
@@ -752,7 +751,7 @@ function vInf(){
     '<div class="kpi"><small>Total de egresos</small><b>'+fmt(R.totEg)+'</b></div>'+
     '<div class="kpi"><small>Ingresos − egresos</small><b class="'+(R.totIng-R.totEg<0?'neg':'')+'">'+fmt(R.totIng-R.totEg)+'</b></div>'+
     '<div class="kpi"><small>Deudas de trabajadores</small><b>'+fmt(deudasHoy(C))+'</b><em>Saldo pendiente a hoy</em></div>'+
-    '<div class="kpi"><small>Vales de consumo</small><b>'+fmt(R.vales)+'</b><em>Solo nómina, no suma a ingresos</em></div></div>';
+    '<div class="kpi"><small>Consumo</small><b>'+fmt(R.vales)+'</b><em>Solo nómina, no suma a ingresos</em></div></div>';
   const comAny=DATAFONOS.some(d=>Number(S.config.comision[d.k])>0);
   h+='<div class="icols"><section class="card"><div class="card-h"><h3>Ingresos por forma de pago</h3></div><div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Forma de pago</th><th class="m">Total</th>'+(comAny?'<th class="m">Llega al banco</th>':'')+'</tr></thead><tbody>'+
     DATAFONOS.map(d=>'<tr><td>'+d.nombre+'</td><td class="m">'+fmt(R.ing[d.k])+'</td>'+(comAny?'<td class="m">'+fmt(neto(d.k,R.ing[d.k]))+'</td>':'')+'</tr>').join('')+
@@ -762,7 +761,7 @@ function vInf(){
     Object.keys(CATS).map(c=>'<tr><td>'+CATS[c]+'</td><td class="m">'+fmt(R.eg[c])+'</td></tr>').join('')+'</tbody><tfoot><tr><td>Total egresos</td><td class="m">'+fmt(R.totEg)+'</td></tr></tfoot></table></div></section></div>';
   if(r.desde!==r.hasta){
     const ds=Object.keys(R.dias).sort();
-    h+='<section class="card" style="margin-top:14px"><div class="card-h"><h3>Detalle por jornada</h3></div>'+(ds.length?'<div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Jornada</th><th class="m">Ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th class="m">Vales (nómina)</th></tr></thead><tbody>'+
+    h+='<section class="card" style="margin-top:14px"><div class="card-h"><h3>Detalle por jornada</h3></div>'+(ds.length?'<div class="tw" style="margin:0"><table class="tbl"><thead><tr><th>Jornada</th><th class="m">Ingresos</th><th class="m">Egresos</th><th class="m">Saldo</th><th class="m">Consumo (nómina)</th></tr></thead><tbody>'+
       ds.map(f=>{const D=R.dias[f];return '<tr class="click" data-act="ir-jornada" data-f="'+f+'"><td>'+fechaLarga(f)+'</td><td class="m">'+fmt(D.ing)+'</td><td class="m">'+fmt(D.eg)+'</td><td class="m">'+fmt(D.ing-D.eg)+'</td><td class="m muted">'+fmt(D.vales)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty">No hay registros en este periodo.</div>')+'</section>';
   }
   return h;
@@ -800,11 +799,11 @@ function err(k,m){UI.err[k]=m;render();}
 function guardarVale(){
   const w=dv('vale-w'),v=parseMoney(dv('vale-v')),o=dv('vale-o');
   if(!w)return err('vale','Elige el trabajador.');
-  if(!v)return err('vale','Escribe el valor del vale.');
-  if(!o)return err('vale','Elige de dónde sale el dinero del vale.');
+  if(!v)return err('vale','Escribe el valor del consumo.');
+  if(!o)return err('vale','Elige de dónde sale el consumo.');
   const T=turnoMut(),ctx=ctxTurno();
-  if(UI.edit&&UI.edit.kind==='vale'){const r=T.vales.find(x=>x.id===UI.edit.id);if(r){const an=dVale(r);r.workerId=w;r.valor=v;r.origen=o;log('Editó','Vale · '+ctx,an,dVale(r));}UI.edit=null;}
-  else{const r={id:uid(),workerId:w,valor:v,origen:o};T.vales.push(r);log('Creó','Vale · '+ctx,'',dVale(r));}
+  if(UI.edit&&UI.edit.kind==='vale'){const r=T.vales.find(x=>x.id===UI.edit.id);if(r){const an=dVale(r);r.workerId=w;r.valor=v;r.origen=o;log('Editó','Consumo · '+ctx,an,dVale(r));}UI.edit=null;}
+  else{const r={id:uid(),workerId:w,valor:v,origen:o};T.vales.push(r);log('Creó','Consumo · '+ctx,'',dVale(r));}
   delete UI.drafts['vale-w'];delete UI.drafts['vale-v'];UI.err.vale=null;saveJornada(UI.fecha);UI.focus='d-vale-w';render();
 }
 function guardarEgreso(){
@@ -843,7 +842,7 @@ function borrar(kind,id){
   const lst=kind==='vale'?T.vales:kind==='egreso'?T.egresos:T.traslados;
   const i=lst.findIndex(x=>x.id===id);if(i<0)return render();
   const r=lst[i];lst.splice(i,1);
-  log('Borró',(kind==='vale'?'Vale':kind==='egreso'?'Egreso':'Traslado')+' · '+ctx,kind==='vale'?dVale(r):kind==='egreso'?dEgreso(r):dTraslado(r),'');
+  log('Borró',(kind==='vale'?'Consumo':kind==='egreso'?'Egreso':'Traslado')+' · '+ctx,kind==='vale'?dVale(r):kind==='egreso'?dEgreso(r):dTraslado(r),'');
   if(UI.edit&&UI.edit.id===id){UI.edit=null;}
   saveJornada(UI.fecha);render();
 }
