@@ -594,7 +594,7 @@ function cResumen(f){
     '<div class="kpi"><small>Egresos de la Caja</small><b>'+fmt(tEg)+'</b><em>Solo lo pagado desde la Caja</em></div>'+
     '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos de la Caja</em></div>'+
     '<div class="kpi"><small>Egresos de la Caja fuerte</small><b>'+fmt(tCF)+'</b><em>Pagado desde la Caja fuerte en esta jornada</em></div>'+
-    '<div class="kpi"><small>Efectivo disponible en Caja fuerte</small><b class="'+(disp<0?'neg':'')+'">'+fmt(disp)+'</b><em>'+(esHoy?'Saldo actual':'Al cierre de esta jornada')+'</em></div></div>'+
+    '<div class="kpi"><small>Efectivo disponible</small><b class="'+(disp<0?'neg':'')+'">'+fmt(disp)+'</b><em>'+(esHoy?'Caja fuerte · saldo actual':'Caja fuerte · al cierre de esta jornada')+'</em></div></div>'+
     '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos de la Caja</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th><th class="m">Egresos Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
     '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td><td class="m">'+fmt(tCF)+'</td></tr></tfoot></table></div></section>';
 }
