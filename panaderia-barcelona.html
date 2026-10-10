@@ -394,17 +394,18 @@ function arqueo(f,n){
 function egresosCajaTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos.filter(e=>e.origen==='caja'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='caja'),e=>e.valor);}
 function egresosTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos,e=>e.valor)+sum(egnomDe(f,n),e=>e.valor);}
 
-function calcSaldos(){
+/* hasta (opcional): solo cuenta jornadas con fecha <= hasta */
+function calcSaldos(hasta){
   const s={};S.config.cuentas.forEach(c=>s[c.id]=c.inicial||0);
   const add=(id,v)=>{if(id!=='caja'&&s[id]!==undefined)s[id]+=v;};
-  Object.values(S.jornadas).forEach(j=>{[1,2,3].forEach(n=>{
+  Object.values(S.jornadas).forEach(j=>{if(hasta&&j.fecha>hasta)return;[1,2,3].forEach(n=>{
     const t=j.turnos[n];
     DATAFONOS.forEach(d=>add(d.cuenta,neto(d.k,t.ingresos[d.k])));
     t.egresos.forEach(e=>add(e.origen,-e.valor));
     t.traslados.forEach(x=>{add(x.origen,-x.valor);add(x.destino,x.valor);});
     if(t.cerrado&&t.contado!=null)add('cajafuerte',Math.max(0,t.contado-turnoBase(t)));
   });});
-  Object.values(S.egnom).forEach(e=>add(e.origen,-e.valor));
+  Object.values(S.egnom).forEach(e=>{if(hasta&&e.jornada>hasta)return;add(e.origen,-e.valor);});
   return s;
 }
 
@@ -577,19 +578,25 @@ function cArqueo(f,n,t){
   }
   return h+'</section>';
 }
+function egresosCFTurno(f,n){const t=turnoLeer(f,n);return sum(t.egresos.filter(e=>e.origen==='cajafuerte'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='cajafuerte'),e=>e.valor);}
 function cResumen(f){
-  let tIng=0,tEg=0;
-  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),ing=ingresosDinero(t),eg=egresosCajaTurno(f,n);
-    tIng+=ing;tEg+=eg;
+  let tIng=0,tEg=0,tCF=0;
+  const rows=[1,2,3].map(n=>{const t=turnoLeer(f,n),A=arqueo(f,n),ing=ingresosDinero(t),eg=egresosCajaTurno(f,n),cf=egresosCFTurno(f,n);
+    tIng+=ing;tEg+=eg;tCF+=cf;
     const arq=!t.cerrado?'<span class="chip">'+(tocado(t)?'Sin cerrar':'—')+'</span>':A.dif>0?'<span class="chip good">Sobrante '+fmt(A.dif)+'</span>':A.dif<0?'<span class="chip bad">Faltante '+fmt(-A.dif)+'</span>':'<span class="chip">Sin diferencia</span>';
-    return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(ing)+'</td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(ing-eg)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td></tr>';}).join('');
+    return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(ing)+'</td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(ing-eg)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td><td class="m">'+fmt(cf)+'</td></tr>';}).join('');
+  const cfFuera=sum(egnomDe(f).filter(e=>e.turno==null&&e.origen==='cajafuerte'),e=>e.valor);tCF+=cfFuera;
+  const filaF=cfFuera?'<tr><td>Fuera de turno <span class="muted small">Nómina pagada desde la Caja fuerte</span></td><td class="m">—</td><td class="m">—</td><td class="m">—</td><td></td><td class="m">—</td><td class="m">'+fmt(cfFuera)+'</td></tr>':'';
+  const disp=calcSaldos(f).cajafuerte||0,esHoy=f>=jornadaActual();
   return '<div class="sec-title"><h2>Total de venta</h2><span class="muted">'+fechaLarga(f)+'</span></div>'+
     '<section class="card"><div class="kpis">'+
     '<div class="kpi"><small>Total de ingresos</small><b>'+fmt(tIng)+'</b><em>Datáfonos + efectivo</em></div>'+
     '<div class="kpi"><small>Egresos de la Caja</small><b>'+fmt(tEg)+'</b><em>Solo lo pagado desde la Caja</em></div>'+
-    '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos de la Caja</em></div></div>'+
-    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos de la Caja</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+
-    '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
+    '<div class="kpi"><small>Saldo de la jornada</small><b class="'+(tIng-tEg<0?'neg':'')+'">'+fmt(tIng-tEg)+'</b><em>Ingresos − egresos de la Caja</em></div>'+
+    '<div class="kpi"><small>Egresos de la Caja fuerte</small><b>'+fmt(tCF)+'</b><em>Pagado desde la Caja fuerte en esta jornada</em></div>'+
+    '<div class="kpi"><small>Efectivo disponible en Caja fuerte</small><b class="'+(disp<0?'neg':'')+'">'+fmt(disp)+'</b><em>'+(esHoy?'Saldo actual':'Al cierre de esta jornada')+'</em></div></div>'+
+    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Ingresos</th><th class="m">Egresos de la Caja</th><th class="m">Saldo</th><th>Arqueo</th><th class="m">A Caja fuerte</th><th class="m">Egresos Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
+    '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tIng)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tIng-tEg)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td><td class="m">'+fmt(tCF)+'</td></tr></tfoot></table></div></section>';
 }
 
 /* ── Nómina ── */
