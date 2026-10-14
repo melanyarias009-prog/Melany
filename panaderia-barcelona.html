@@ -424,10 +424,18 @@ function cargosIndex(){
 }
 function descontado(wid,exceptQ){let s=0;Object.values(S.quincenas).forEach(Q=>{if(Q.id===exceptQ)return;const f=Q.filas&&Q.filas[wid];if(f&&f.pagado)s+=f.descontado||0;});return s;}
 function esUltimo(w,qid){return !!(w&&w.activo&&w.retiro&&!w.retiro.completado&&qIdxId(qid)>=qIdxId(w.retiro.q));}
+/* Cada quincena arranca con el consumo en cero: solo cuenta lo de esa quincena
+   (consumo y cuota de préstamo que le toca) más lo que quedó pendiente en la
+   quincena anterior ya pagada. En el último pago de un retiro se descuenta todo. */
 function deudaPara(wid,qid,C){
-  const w=S.workers[wid],idx=qIdxId(qid),ult=esUltimo(w,qid);
-  const c=sum((C[wid]||[]).filter(x=>ult||x.due<=idx),x=>x.monto);
-  return Math.max(0,c-descontado(wid,qid));
+  const w=S.workers[wid],idx=qIdxId(qid);
+  if(esUltimo(w,qid))return Math.max(0,sum(C[wid]||[],x=>x.monto)-descontado(wid,qid));
+  const propios=sum((C[wid]||[]).filter(x=>x.due===idx),x=>x.monto);
+  return propios+pendienteAnterior(wid,qid);
+}
+function pendienteAnterior(wid,qid){
+  const P=S.quincenas[qId(qFromIdx(qIdxId(qid)-1))],fp=P&&P.filas&&P.filas[wid];
+  return fp&&fp.pagado?Math.max(0,(fp.deuda||0)-(fp.descontado||0)):0;
 }
 function saldoWorker(wid,C){return sum(C[wid]||[],x=>x.monto)-descontado(wid);}
 function deudasHoy(C){return sum(Object.keys(S.workers),id=>Math.max(0,saldoWorker(id,C)));}
@@ -672,7 +680,7 @@ function vNomina(){
   const T={valor:sum(rows,r=>r.valor||0),deuda:sum(rows,r=>r.deuda||0),pago:sum(rows,r=>r.pago||0)};
   h+='</tbody><tfoot><tr><td></td><td>Totales</td><td></td><td class="m">'+fmt(T.valor)+'</td><td class="m">'+fmt(T.deuda)+'</td><td class="m">'+fmt(T.pago)+'</td><td></td><td></td></tr></tfoot></table></div>';
   if(!rows.length)h+='<div class="empty">No hay trabajadores activos.</div>';
-  h+='<p class="small muted" style="margin-top:10px">Deuda = consumo de la quincena + cuotas de préstamos que tocan + saldos pendientes anteriores. Si la deuda supera el valor, se paga $0 y el resto pasa a la siguiente quincena.</p></section>';
+  h+='<p class="small muted" style="margin-top:10px">Cada quincena arranca con el consumo en cero. Deuda = consumo de esta quincena + cuota de préstamo que le toca + lo que quedó pendiente de la quincena anterior. Si la deuda supera el valor, se paga $0 y el resto pasa a la siguiente quincena. Los registros de quincenas pasadas se conservan.</p></section>';
   return h;
 }
 function vModal(){
