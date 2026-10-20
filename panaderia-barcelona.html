@@ -381,6 +381,8 @@ function turnoRango(f,n){const a=addDays(f,-1);return n===1?fechaCorta(a)+' 10:0
 function neto(k,v){const p=Number(S.config.comision[k]||0);return Math.round((v||0)*(1-p/100));}
 function ingresosDinero(t){return (t.ingresos.davivienda||0)+(t.ingresos.bancolombia||0)+(t.ingresos.bold||0)+(t.ingresos.efectivo||0);}
 function egnomDe(f,n){return Object.values(S.egnom).filter(e=>e.jornada===f&&(n===undefined?true:e.turno===n));}
+/* Egresos registrados a nivel de jornada (Caja fuerte, datáfono y otras cuentas, sin turno) */
+function egDia(f){const j=S.jornadas[f];return (j&&j.egresosDia)||[];}
 function arqueo(f,n){
   const t=turnoLeer(f,n),base=turnoBase(t),efectivo=t.ingresos.efectivo||0;
   const egCaja=sum(t.egresos.filter(e=>e.origen==='caja'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='caja'),e=>e.valor);
@@ -404,7 +406,7 @@ function calcSaldos(hasta){
     t.egresos.forEach(e=>add(e.origen,-e.valor));
     t.traslados.forEach(x=>{add(x.origen,-x.valor);add(x.destino,x.valor);});
     if(t.cerrado&&t.contado!=null)add('cajafuerte',Math.max(0,t.contado-turnoBase(t)));
-  });});
+  });(j.egresosDia||[]).forEach(e=>add(e.origen,-e.valor));});
   Object.values(S.egnom).forEach(e=>{if(hasta&&e.jornada>hasta)return;add(e.origen,-e.valor);});
   return s;
 }
@@ -415,11 +417,12 @@ function cargosIndex(){
   Object.values(S.jornadas).forEach(j=>{const f=j.fecha,qi=qIdx(qDe(f));[1,2,3].forEach(n=>{
     const t=j.turnos[n];
     t.vales.forEach(v=>{(C[v.workerId]=C[v.workerId]||[]).push({tipo:'Vale',fecha:f,turno:n,monto:v.valor,due:qi,ref:v.id});});
-    t.egresos.forEach(e=>{if(e.cat!=='prestamo'||!e.workerId)return;
-      const k=Math.max(1,parseInt(e.cuotas,10)||1),b=Math.floor(e.valor/k);
-      for(let i=0;i<k;i++)(C[e.workerId]=C[e.workerId]||[]).push({tipo:'Préstamo',fecha:f,turno:n,monto:i<k-1?b:e.valor-b*(k-1),due:qi+i,cuota:i+1,de:k,ref:e.id,desc:e.desc,total:e.valor});
-    });
-  });});
+    t.egresos.forEach(e=>prest(e,f,n,qi));
+  });(j.egresosDia||[]).forEach(e=>prest(e,f,null,qi));});
+  function prest(e,f,n,qi){if(e.cat!=='prestamo'||!e.workerId)return;
+    const k=Math.max(1,parseInt(e.cuotas,10)||1),b=Math.floor(e.valor/k);
+    for(let i=0;i<k;i++)(C[e.workerId]=C[e.workerId]||[]).push({tipo:'Préstamo',fecha:f,turno:n,monto:i<k-1?b:e.valor-b*(k-1),due:qi+i,cuota:i+1,de:k,ref:e.id,desc:e.desc,total:e.valor});
+  }
   return C;
 }
 function descontado(wid,exceptQ){let s=0;Object.values(S.quincenas).forEach(Q=>{if(Q.id===exceptQ)return;const f=Q.filas&&Q.filas[wid];if(f&&f.pagado)s+=f.descontado||0;});return s;}
@@ -494,6 +497,7 @@ function vFlujo(){
     '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(ant)+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm</p></div></div>';
   h+='<div class="turns" role="group" aria-label="Turnos">'+[1,2,3].map(k=>'<button class="turn" data-act="turno" data-n="'+k+'" aria-pressed="'+(k===n)+'"><span><b>Turno '+k+'</b><small>'+turnoRango(f,k)+'</small></span>'+estadoTurno(f,k)+'</button>').join('')+'</div>';
   h+='<div class="fgrid"><div class="stack">'+cIngresos(t)+cVales(t)+cEgresos(t)+cTraslados(t)+'</div><aside class="side">'+cArqueo(f,n,t)+'</aside></div>';
+  h+=cEgresosDia(f);
   h+=cResumen(f);
   return h;
 }
@@ -556,6 +560,24 @@ function cTraslados(t){
   }else h+='<div class="empty">No hay traslados en este turno.</div>';
   return h+'</section>';
 }
+function cEgresosDia(f){
+  const lst=egDia(f),ed=UI.edit&&UI.edit.kind==='egdia',cat=dv('ed-cat','gastos'),pr=cat==='prestamo';
+  let h='<section class="card" style="margin-top:16px"><div class="card-h"><h3>Egresos de la jornada · Caja fuerte y datáfono</h3><p>Para lo pagado en el día desde la Caja fuerte, Davivienda, Bancolombia, Bold u otra cuenta, sin escoger turno</p></div>'+
+    '<div class="formrow f-eg'+(pr?' prest':'')+'">'+
+    '<label class="fld"><span>Categoría</span><select id="d-ed-cat" data-draft="ed-cat" data-rerender="1">'+CATS_MANUAL.map(c=>'<option value="'+c+'"'+(c===cat?' selected':'')+'>'+CATS[c]+'</option>').join('')+'</select></label>'+
+    (pr?'<label class="fld"><span>Trabajador</span><select id="d-ed-w" data-draft="ed-w">'+optWorkers(dv('ed-w'))+'</select></label>'+
+       '<label class="fld"><span>Cuotas</span><input type="number" min="1" max="24" id="d-ed-cuotas" data-draft="ed-cuotas" value="'+esc(dv('ed-cuotas','1'))+'" title="Número de quincenas"></label>':'')+
+    '<label class="fld"><span>Descripción</span><input type="text" id="d-ed-desc" data-draft="ed-desc" data-enter="ed-guardar" value="'+esc(dv('ed-desc'))+'" placeholder="'+(pr?'Opcional':'Ej. arriendo, servicios')+'"></label>'+
+    '<label class="fld"><span>Valor</span>'+money('d-ed-v','data-draft="ed-v" data-enter="ed-guardar"',dv('ed-v'))+'</label>'+
+    '<label class="fld"><span>Sale de</span><select id="d-ed-o" data-draft="ed-o">'+optLugares(dv('ed-o','cajafuerte'),false,'caja')+'</select></label>'+
+    '<div class="btnrow"><button class="btn primary" data-act="ed-guardar">'+(ed?'Guardar':'Agregar')+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('ed');
+  if(lst.length){
+    h+='<div class="tw"><table class="tbl"><thead><tr><th>Categoría</th><th>Descripción</th><th>Sale de</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
+      lst.map(e=>'<tr class="'+(ed&&UI.edit.id===e.id?'editing':'')+'"><td>'+CATS[e.cat]+'</td><td>'+(e.cat==='prestamo'?'<b>'+esc(nombreW(e.workerId))+'</b>'+((e.cuotas||1)>1?' · '+e.cuotas+' cuotas':'')+(e.desc?' · ':''):'')+esc(e.desc||(e.cat==='prestamo'?'':'—'))+'</td><td>'+esc(lugar(e.origen))+'</td><td class="m">'+fmt(e.valor)+'</td><td class="act">'+delBtns('egdia',e.id)+'</td></tr>').join('')+
+      '</tbody><tfoot><tr><td colspan="3">Total egresos de la jornada</td><td class="m">'+fmt(sum(lst,e=>e.valor))+'</td><td></td></tr></tfoot></table></div>';
+  }else h+='<div class="empty">No hay egresos de la jornada.</div>';
+  return h+'</section>';
+}
 function difHTML(contado,esperado){
   if(contado==null)return '<div class="dif none">Escribe el efectivo contado para ver la diferencia.</div>';
   const d=contado-esperado;
@@ -599,7 +621,7 @@ function movDia(f){
     DATAFONOS.forEach(d=>dat+=neto(d.k,t.ingresos[d.k]));
     t.egresos.forEach(e=>{if(e.origen==='caja'||e.origen==='cajafuerte')egEf+=e.valor;else if(CTAS_DATAFONO.indexOf(e.origen)>=0)egDat+=e.valor;});
   });
-  egnomDe(f).forEach(e=>{if(e.origen==='caja'||e.origen==='cajafuerte')egEf+=e.valor;else if(CTAS_DATAFONO.indexOf(e.origen)>=0)egDat+=e.valor;});
+  egnomDe(f).concat(egDia(f)).forEach(e=>{if(e.origen==='caja'||e.origen==='cajafuerte')egEf+=e.valor;else if(CTAS_DATAFONO.indexOf(e.origen)>=0)egDat+=e.valor;});
   return {ef,dat,egEf,egDat};
 }
 /* Lo que se arrastra hasta antes de la jornada f (suma de todos los días anteriores) */
@@ -619,6 +641,8 @@ function cResumen(f){
     return '<tr><td>Turno '+n+' <span class="muted small">'+turnoRango(f,n)+'</span></td><td class="m">'+fmt(dat)+'</td><td class="m">'+fmt(ef)+'</td><td class="m">'+fmt(eg)+'</td><td class="m">'+fmt(cf)+'</td><td>'+arq+'</td><td class="m">'+(t.cerrado?fmt(A.aFuerte):'—')+'</td></tr>';}).join('');
   const cfFuera=sum(egnomDe(f).filter(e=>e.turno==null&&e.origen==='cajafuerte'),e=>e.valor);tCF+=cfFuera;
   const filaF=cfFuera?'<tr><td>Fuera de turno <span class="muted small">Nómina pagada desde la Caja fuerte</span></td><td class="m">—</td><td class="m">—</td><td class="m">—</td><td class="m">'+fmt(cfFuera)+'</td><td></td><td class="m">—</td></tr>':'';
+  const ed=egDia(f),dCF=sum(ed.filter(e=>e.origen==='cajafuerte'),e=>e.valor);tCF+=dCF;
+  const filaD=ed.length?'<tr><td>Egresos de la jornada <span class="muted small">Caja fuerte, datáfono y cuentas</span></td><td class="m">—</td><td class="m">—</td><td class="m">—</td><td class="m">'+fmt(dCF)+'</td><td></td><td class="m">—</td></tr>':'';
   const ant=arrastre(f),m=movDia(f);
   const efDisp=ant.ef+m.ef-m.egEf,datAct=ant.dat+m.dat-m.egDat;
   const neg=v=>v<0?'neg':'';
@@ -628,13 +652,14 @@ function cResumen(f){
     '<div class="kpi"><small>Total efectivo</small><b>'+fmt(tEf)+'</b><em>Ventas en efectivo</em></div>'+
     '<div class="kpi"><small>Total venta</small><b>'+fmt(tDat+tEf)+'</b><em>Davivienda + Bancolombia + Bold + efectivo</em></div>'+
     '<div class="kpi"><small>Egresos de la Caja</small><b>'+fmt(tEg)+'</b><em>Pagado desde la Caja</em></div>'+
-    '<div class="kpi"><small>Egresos de la Caja fuerte</small><b>'+fmt(tCF)+'</b><em>Pagado desde la Caja fuerte</em></div></div>'+
+    '<div class="kpi"><small>Egresos de la Caja fuerte</small><b>'+fmt(tCF)+'</b><em>Pagado desde la Caja fuerte</em></div>'+
+    '<div class="kpi"><small>Egresos por datáfono</small><b>'+fmt(m.egDat)+'</b><em>Pagado desde Davivienda, Bancolombia o Bold</em></div></div>'+
     '<div class="kpis">'+
     '<div class="kpi"><small>Efectivo anterior</small><b class="'+neg(ant.ef)+'">'+fmt(ant.ef)+'</b><em>Lo que quedó del día anterior</em></div>'+
     '<div class="kpi"><small>Efectivo disponible</small><b class="'+neg(efDisp)+'">'+fmt(efDisp)+'</b><em>Anterior '+fmt(ant.ef)+' + efectivo del día '+fmt(m.ef)+' − egresos en efectivo '+fmt(m.egEf)+'</em></div>'+
     '<div class="kpi"><small>Datáfono anterior</small><b class="'+neg(ant.dat)+'">'+fmt(ant.dat)+'</b><em>Lo que viene del día anterior</em></div>'+
     '<div class="kpi"><small>Datáfono actual</small><b class="'+neg(datAct)+'">'+fmt(datAct)+'</b><em>Anterior '+fmt(ant.dat)+' + datáfono del día '+fmt(m.dat)+' − egresos por datáfono '+fmt(m.egDat)+'</em></div></div>'+
-    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Datáfono</th><th class="m">Efectivo</th><th class="m">Egresos de la Caja</th><th class="m">Egresos Caja fuerte</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+filaF+
+    '<div class="tw"><table class="tbl"><thead><tr><th>Turno</th><th class="m">Datáfono</th><th class="m">Efectivo</th><th class="m">Egresos de la Caja</th><th class="m">Egresos Caja fuerte</th><th>Arqueo</th><th class="m">A Caja fuerte</th></tr></thead><tbody>'+rows+filaF+filaD+
     '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tDat)+'</td><td class="m">'+fmt(tEf)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tCF)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
 }
 
@@ -778,7 +803,7 @@ function calcInforme(desde,hasta){
     const v=sum(t.vales,x=>x.valor);R.vales+=v;
     t.egresos.forEach(e=>R.eg[e.cat]+=e.valor);
     const D=dia(j.fecha);D.ing+=ingresosDinero(t);D.vales+=v;D.eg+=sum(t.egresos,e=>e.valor);
-  });});
+  });(j.egresosDia||[]).forEach(e=>{R.eg[e.cat]+=e.valor;dia(j.fecha).eg+=e.valor;});});
   Object.values(S.egnom).forEach(e=>{if(e.jornada<desde||e.jornada>hasta)return;R.eg.nomina+=e.valor;dia(e.jornada).eg+=e.valor;});
   R.totIng=sum(Object.values(R.ing));R.totEg=sum(Object.values(R.eg));
   return R;
@@ -865,6 +890,20 @@ function guardarEgreso(){
   else{const r=Object.assign({id:uid()},datos);T.egresos.push(r);log('Creó','Egreso · '+ctx,'',dEgreso(r));}
   ['eg-v','eg-desc','eg-w','eg-cuotas'].forEach(k=>delete UI.drafts[k]);UI.err.eg=null;saveJornada(UI.fecha);UI.focus='d-eg-desc';render();
 }
+function guardarEgDia(){
+  const cat=dv('ed-cat','gastos'),v=parseMoney(dv('ed-v')),o=dv('ed-o','cajafuerte'),desc=dv('ed-desc').trim();
+  const w=dv('ed-w'),cu=parseInt(dv('ed-cuotas','1'),10);
+  if(cat==='prestamo'&&!w)return err('ed','Elige el trabajador del préstamo.');
+  if(cat==='prestamo'&&!(cu>=1&&cu<=24))return err('ed','Las cuotas deben ser entre 1 y 24 quincenas.');
+  if(!v)return err('ed','Escribe el valor del egreso.');
+  if(cat!=='prestamo'&&!desc)return err('ed','Escribe una descripción.');
+  const j=getJornada(UI.fecha,true);if(!j.egresosDia)j.egresosDia=[];
+  const ctx='Jornada '+fechaMed(UI.fecha)+' · Egresos de la jornada';
+  const datos={cat:cat,desc:desc,valor:v,origen:o,workerId:cat==='prestamo'?w:null,cuotas:cat==='prestamo'?cu:null};
+  if(UI.edit&&UI.edit.kind==='egdia'){const r=j.egresosDia.find(x=>x.id===UI.edit.id);if(r){const an=dEgreso(r);Object.assign(r,datos);log('Editó','Egreso · '+ctx,an,dEgreso(r));}UI.edit=null;}
+  else{const r=Object.assign({id:uid()},datos);j.egresosDia.push(r);log('Creó','Egreso · '+ctx,'',dEgreso(r));}
+  ['ed-v','ed-desc','ed-w','ed-cuotas'].forEach(k=>delete UI.drafts[k]);UI.err.ed=null;saveJornada(UI.fecha);UI.focus='d-ed-desc';render();
+}
 function guardarTraslado(){
   const o=dv('tr-o'),d=dv('tr-d'),v=parseMoney(dv('tr-v')),desc=dv('tr-desc').trim();
   if(!o||!d)return err('tr','Elige de dónde sale y a dónde entra el dinero.');
@@ -879,12 +918,17 @@ function editar(kind,id){
   const t=turnoLeer(UI.fecha,UI.turno);UI.confirm=null;
   if(kind==='vale'){const r=t.vales.find(x=>x.id===id);if(!r)return;UI.drafts['vale-w']=r.workerId;UI.drafts['vale-v']=fmtIn(r.valor);UI.drafts['vale-o']=r.origen||'';UI.focus='d-vale-v';}
   if(kind==='egreso'){const r=t.egresos.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'eg-cat':r.cat,'eg-v':fmtIn(r.valor),'eg-o':r.origen,'eg-desc':r.desc||'','eg-w':r.workerId||'','eg-cuotas':String(r.cuotas||1)});UI.focus='d-eg-v';}
+  if(kind==='egdia'){const r=egDia(UI.fecha).find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'ed-cat':r.cat,'ed-v':fmtIn(r.valor),'ed-o':r.origen,'ed-desc':r.desc||'','ed-w':r.workerId||'','ed-cuotas':String(r.cuotas||1)});UI.focus='d-ed-v';}
   if(kind==='traslado'){const r=t.traslados.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'tr-o':r.origen,'tr-d':r.destino,'tr-v':fmtIn(r.valor),'tr-desc':r.desc||''});UI.focus='d-tr-v';}
   UI.edit={kind:kind,id:id};render();
 }
 function borrar(kind,id){
   if(UI.confirm!==kind+':'+id){UI.confirm=kind+':'+id;render();return;}
-  UI.confirm=null;const T=turnoMut(),ctx=ctxTurno();
+  UI.confirm=null;
+  if(kind==='egdia'){const j=getJornada(UI.fecha,true),L=j.egresosDia||[],i=L.findIndex(x=>x.id===id);if(i<0)return render();
+    const r=L.splice(i,1)[0];log('Borró','Egreso · Jornada '+fechaMed(UI.fecha)+' · Egresos de la jornada',dEgreso(r),'');
+    if(UI.edit&&UI.edit.id===id)UI.edit=null;saveJornada(UI.fecha);render();return;}
+  const T=turnoMut(),ctx=ctxTurno();
   const lst=kind==='vale'?T.vales:kind==='egreso'?T.egresos:T.traslados;
   const i=lst.findIndex(x=>x.id===id);if(i<0)return render();
   const r=lst[i];lst.splice(i,1);
@@ -892,7 +936,7 @@ function borrar(kind,id){
   if(UI.edit&&UI.edit.id===id){UI.edit=null;}
   saveJornada(UI.fecha);render();
 }
-function cancelarEdit(){const k=UI.edit&&UI.edit.kind;UI.edit=null;if(k==='vale')clearDrafts('vale-');if(k==='egreso')clearDrafts('eg-');if(k==='traslado')clearDrafts('tr-');render();}
+function cancelarEdit(){const k=UI.edit&&UI.edit.kind;UI.edit=null;if(k==='vale')clearDrafts('vale-');if(k==='egreso')clearDrafts('eg-');if(k==='traslado')clearDrafts('tr-');if(k==='egdia')clearDrafts('ed-');render();}
 function cambiarJornada(f){if(!f)return;UI.fecha=f;UI.edit=null;UI.confirm=null;UI.err={};render();}
 function cerrarTurno(){
   const el=$('#arq-contado');if(el){const v=parseMoney(el.value);const t0=turnoLeer(UI.fecha,UI.turno);if(v!==t0.contado)commitContado(v,true);}
@@ -1062,6 +1106,7 @@ document.addEventListener('click',e=>{
     case 'vale-guardar':guardarVale();break;
     case 'eg-guardar':guardarEgreso();break;
     case 'tr-guardar':guardarTraslado();break;
+    case 'ed-guardar':guardarEgDia();break;
     case 'editar':editar(el.dataset.kind,el.dataset.id);break;
     case 'borrar':borrar(el.dataset.kind,el.dataset.id);break;
     case 'no-borrar':UI.confirm=null;render();break;
