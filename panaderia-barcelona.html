@@ -3,6 +3,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 /* Layout: barra superior con saldos, pestañas, y en Flujo diario una columna de registro + columna lateral fija con el arqueo */
 :root{
@@ -205,6 +206,15 @@ dl.calc div.tot dt{color:var(--ink);font-weight:600} dl.calc div.tot dd{font-wei
 .ov{position:fixed;inset:0;background:rgba(10,12,11,.45);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 .modal{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;width:min(520px,100%);max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:14px}
 .modal .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.modal.wide{width:min(760px,100%)}
+.hoja{background:#fff;color:#1a1a1a;border:1px solid var(--line);aspect-ratio:8.5/11;width:100%;padding:5% 6%;font-size:.8rem;display:flex;flex-direction:column;gap:10px;overflow:hidden}
+.hoja h4{margin:0;font-family:var(--f-display);font-size:1.15rem}
+.hoja .sub{justify-content:flex-start;margin:0;color:#555;font-size:.75rem}
+.hoja .sec{border:1px solid #cfcfcf;border-radius:4px;overflow:hidden}
+.hoja .sec b.t{display:block;background:#efefef;padding:4px 8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.hoja .row{display:flex;justify-content:space-between;padding:3px 8px;border-top:1px solid #e6e6e6;font-variant-numeric:tabular-nums}
+.hoja .row.tot{font-weight:700;background:#f7f7f7}
+.hoja .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
 .loading{padding:60px 0;text-align:center;color:var(--muted)}
 
 @media (max-width:1100px){
@@ -252,8 +262,8 @@ const DATAFONOS=[
   {k:'bancolombia',nombre:'Datáfono Bancolombia',cuenta:'bancolombia'},
   {k:'bold',nombre:'Datáfono Bold',cuenta:'bold'}
 ];
-const CATS={produccion:'Costos de producción',prestamo:'Préstamo a trabajador',gastos:'Gastos',imprevistos:'Imprevistos',aseo:'Aseo',nomina:'Nómina'};
-const CATS_MANUAL=['produccion','prestamo','gastos','imprevistos','aseo','nomina'];
+const CATS={produccion:'Costos de producción',prestamo:'Préstamo a trabajador',gastos:'Gastos',imprevistos:'Imprevistos',aseo:'Aseo',nomina:'Nómina',fabian:'Don Fabián'};
+const CATS_MANUAL=['produccion','prestamo','gastos','imprevistos','aseo','nomina','fabian'];
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 function DEFAULT_CONFIG(){return {
@@ -504,7 +514,8 @@ function vFlujo(){
     '<input type="date" id="f-fecha" data-commit="fecha" value="'+f+'" aria-label="Fecha de la jornada">'+
     '<button class="btn ghost icon" data-act="j-next" aria-label="Jornada siguiente">›</button>'+
     (f!==jornadaActual()?'<button class="btn sm" data-act="j-hoy">Jornada actual</button>':'')+'</div>'+
-    '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(ant)+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm</p></div></div>';
+    '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(ant)+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm</p></div>'+
+    '<button class="btn" data-act="imprimir" style="margin-left:auto">Imprimir</button></div>';
   h+='<div class="turns" role="group" aria-label="Turnos">'+[1,2,3].map(k=>'<button class="turn" data-act="turno" data-n="'+k+'" aria-pressed="'+(k===n)+'"><span><b>Turno '+k+'</b><small>'+turnoRango(f,k)+'</small></span>'+estadoTurno(f,k)+'</button>').join('')+
     (function(){const L=egDia(f);return '<button class="turn" data-act="turno-dia" aria-pressed="'+esDia+'"><span><b>Egresos de la jornada</b><small>Caja fuerte y datáfono</small></span>'+(L.length?'<span class="chip acc">'+fmt(sum(L,e=>e.valor))+'</span>':'<span class="chip">Sin registros</span>')+'</button>';})()+'</div>';
   if(esDia)h+=cEgresosDia(f);
@@ -674,6 +685,59 @@ function cResumen(f){
     '</tbody><tfoot><tr><td>Total de venta</td><td class="m">'+fmt(tDat)+'</td><td class="m">'+fmt(tEf)+'</td><td class="m">'+fmt(tEg)+'</td><td class="m">'+fmt(tCF)+'</td><td></td><td class="m">'+fmt(sum([1,2,3],n=>arqueo(f,n).aFuerte))+'</td></tr></tfoot></table></div></section>';
 }
 
+/* Hoja de impresión de la jornada */
+function hojaDia(f){
+  const todos=[];const j=S.jornadas[f];
+  if(j)[1,2,3].forEach(n=>j.turnos[n].egresos.forEach(e=>todos.push(e)));
+  egDia(f).forEach(e=>todos.push(e));
+  const nomAuto=sum(egnomDe(f),e=>e.valor);
+  const cat=c=>sum(todos.filter(e=>e.cat===c),e=>e.valor);
+  const ant=arrastre(f),m=movDia(f);
+  let tDat=0,tEf=0;if(j)[1,2,3].forEach(n=>{const t=j.turnos[n];tEf+=t.ingresos.efectivo||0;tDat+=ingresosDinero(t)-(t.ingresos.efectivo||0);});
+  const H={fecha:f,titulo:'Jornada del '+fechaLarga(f)+' · '+fechaCorta(addDays(f,-1))+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm',
+    materia:cat('produccion'),nomina:cat('nomina')+nomAuto,imprevistos:cat('imprevistos'),aseo:cat('aseo'),fabian:cat('fabian'),
+    otros:cat('gastos')+cat('prestamo'),egresosDia:sum(todos,e=>e.valor)+nomAuto,
+    datDia:m.dat,efDia:m.ef,ventaTotal:tDat+tEf,egDat:m.egDat,egEf:m.egEf,
+    datAnt:ant.dat,datAct:ant.dat+m.dat-m.egDat,efAnt:ant.ef,efAct:ant.ef+m.ef-m.egEf};
+  return H;
+}
+function hojaSecciones(H){
+  const eg=[['Materia prima',H.materia],['Nómina',H.nomina],['Imprevistos',H.imprevistos],['Aseo',H.aseo],['Don Fabián',H.fabian]];
+  if(H.otros)eg.push(['Otros (gastos y préstamos)',H.otros]);
+  eg.push(['Egresos del día',H.egresosDia,true]);
+  return [
+    {t:'Venta del día',rows:[['Datáfono del día',H.datDia],['Efectivo del día',H.efDia],['Venta total',H.ventaTotal,true]]},
+    {t:'Egresos del día',rows:eg},
+    {t:'Datáfono',rows:[['Datáfono anterior',H.datAnt],['Datáfono del día',H.datDia],['Egresos del datáfono',H.egDat],['Datáfono actual',H.datAct,true]]},
+    {t:'Efectivo',rows:[['Efectivo anterior',H.efAnt],['Efectivo del día',H.efDia],['Egresos en efectivo',H.egEf],['Efectivo actual',H.efAct,true]]}
+  ];
+}
+async function imprimirPDF(){
+  UI.err.imp=null;UI.msg.imp=null;
+  if(!window.jspdf||!window.jspdf.jsPDF){UI.err.imp='No se pudo cargar el generador de PDF. Revisa la conexión y recarga la página.';return render();}
+  if(!downloads){UI.err.imp='Las descargas no están disponibles en esta vista.';return render();}
+  const H=hojaDia(UI.fecha),secs=hojaSecciones(H);
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'letter'});
+  const W=215.9,M=18;let y=22;const pf=v=>fmt(v).replace('−','-'),pt=t=>String(t).replace(/→/g,'a').replace(/−/g,'-');
+  doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('Panadería Barcelona',M,y);y+=7;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(90);doc.text(doc.splitTextToSize(pt(H.titulo),W-2*M),M,y);y+=10;doc.setTextColor(0);
+  const seccion=(S2,x,w,y0)=>{let yy=y0;
+    doc.setFillColor(235,235,235);doc.rect(x,yy,w,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text(S2.t.toUpperCase(),x+3,yy+4.8);yy+=7;
+    S2.rows.forEach(r=>{doc.setFont('helvetica',r[2]?'bold':'normal');doc.setFontSize(r[2]?11:10.5);
+      if(r[2]){doc.setFillColor(246,246,246);doc.rect(x,yy,w,8,'F');}
+      doc.text(r[0],x+3,yy+5.6);doc.text(pf(r[1]),x+w-3,yy+5.6,{align:'right'});
+      doc.setDrawColor(215);doc.line(x,yy+8,x+w,yy+8);yy+=8;});
+    doc.setDrawColor(190);doc.rect(x,y0,w,yy-y0);return yy;};
+  y=seccion(secs[0],M,W-2*M,y)+8;
+  const cw=(W-2*M-8)/2;
+  seccion(secs[1],M,cw,y);
+  const yR=seccion(secs[2],M+cw+8,cw,y)+8;seccion(secs[3],M+cw+8,cw,yR);
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(120);doc.text('Generado el '+horaDe(new Date().toISOString()),M,279.4-12);
+  try{await downloads.save({filename:'Jornada_'+UI.fecha+'.pdf',data:new Blob([doc.output('arraybuffer')])});UI.msg.imp='PDF descargado. Ábrelo e imprímelo en tamaño carta.';}
+  catch(e){UI.msg.imp=e&&e.code==='declined'?'Descarga cancelada.':'No se pudo descargar el PDF ('+(e&&e.code||'error')+').';}
+  render();
+}
+
 /* ── Nómina ── */
 function quincenaMut(id){if(!S.quincenas[id])S.quincenas[id]={id:id,filas:{}};return S.quincenas[id];}
 function filaMut(qid,wid){const Q=quincenaMut(qid);if(!Q.filas[wid])Q.filas[wid]={valor:null,origen:'',pagado:false};return Q.filas[wid];}
@@ -737,6 +801,16 @@ function vModal(){
       (rows.some(r=>r.ultimo)?'<div class="note warn">Incluye un último pago: se descuenta toda la deuda del trabajador y queda retirado.</div>':'')+
       errHTML('pago')+
       '<div class="btnrow" style="justify-content:flex-end"><button class="btn" data-act="modal-cerrar">Cancelar</button><button class="btn primary" data-act="pago-confirmar" id="m-ok">Confirmar pago</button></div></div></div>';
+  }
+  if(M.tipo==='imprimir'){
+    const H=hojaDia(UI.fecha);
+    const row=(l,v,tot)=>'<div class="row'+(tot?' tot':'')+'"><span>'+esc(l)+'</span><span>'+fmt(v)+'</span></div>';
+    const secs=hojaSecciones(H).map(S2=>'<div class="sec"><b class="t">'+esc(S2.t)+'</b>'+S2.rows.map(r=>row(r[0],r[1],r[2])).join('')+'</div>');
+    return '<div class="ov" data-act="modal-fondo"><div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="m-t">'+
+      '<h3 id="m-t">Imprimir jornada</h3>'+
+      '<div class="hoja"><div><h4>Panadería Barcelona</h4><div class="sub">'+esc(H.titulo)+'</div></div>'+secs[0]+'<div class="cols">'+secs[1]+'<div style="display:flex;flex-direction:column;gap:10px">'+secs[2]+secs[3]+'</div></div></div>'+
+      errHTML('imp')+(UI.msg.imp?'<div class="note info">'+esc(UI.msg.imp)+'</div>':'')+
+      '<div class="btnrow" style="justify-content:flex-end"><button class="btn" data-act="modal-cerrar">Cerrar</button><button class="btn primary" data-act="imprimir-pdf" id="m-ok">Descargar PDF tamaño carta</button></div></div></div>';
   }
   if(M.tipo==='restore'){
     const d=UI.restore;
@@ -1197,7 +1271,7 @@ document.getElementById('tabs').addEventListener('click',e=>{const b=e.target.cl
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
   const a=el.dataset.act;
-  if(a==='modal-fondo'){if(e.target===el&&UI.modal&&UI.modal.tipo==='pago'){UI.modal=null;render();}return;}
+  if(a==='modal-fondo'){if(e.target===el&&UI.modal&&(UI.modal.tipo==='pago'||UI.modal.tipo==='imprimir')){UI.modal=null;render();}return;}
   switch(a){
     case 'j-prev':cambiarJornada(addDays(UI.fecha,-1));break;
     case 'j-next':cambiarJornada(addDays(UI.fecha,1));break;
@@ -1225,7 +1299,9 @@ document.addEventListener('click',e=>{
     case 'nom-deshacer':deshacerPago(el.dataset.w);break;
     case 'nom-excel':exportarExcel();break;
     case 'pago-confirmar':pagar();break;
-    case 'modal-cerrar':UI.modal=null;UI.restore=null;UI.err.pago=null;render();break;
+    case 'modal-cerrar':UI.modal=null;UI.restore=null;UI.err.pago=null;UI.msg.imp=null;UI.err.imp=null;render();break;
+    case 'imprimir':UI.modal={tipo:'imprimir'};UI.msg.imp=null;UI.err.imp=null;UI.focus='m-ok';render();break;
+    case 'imprimir-pdf':imprimirPDF();break;
     case 'restore-ok':restaurar();break;
     case 'w-sel':UI.wSel=el.dataset.id;UI.wRetiro=null;UI.err.wd=null;render();break;
     case 'w-agregar':agregarTrabajador();break;
@@ -1248,7 +1324,7 @@ document.addEventListener('click',e=>{
   }
 });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&UI.modal&&UI.modal.tipo==='pago'){UI.modal=null;render();return;}
+  if(e.key==='Escape'&&UI.modal&&(UI.modal.tipo==='pago'||UI.modal.tipo==='imprimir')){UI.modal=null;render();return;}
   if(e.key==='Enter'){
     const el=e.target;
     if(el.dataset&&el.dataset.enter){e.preventDefault();if(el.dataset.commit)el.dispatchEvent(new Event('change',{bubbles:true}));setTimeout(()=>{const b=document.querySelector('[data-act="'+el.dataset.enter+'"]');if(b)b.click();},0);}
