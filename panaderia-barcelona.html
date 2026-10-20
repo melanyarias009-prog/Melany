@@ -190,6 +190,14 @@ dl.calc div.tot dt{color:var(--ink);font-weight:600} dl.calc div.tot dd{font-wei
 .cgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
 .f-cta{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto}
 .f-log{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+/* Inventario */
+.f-inv1{grid-template-columns:minmax(0,150px) minmax(0,1.4fr) minmax(0,1fr)}
+.f-inv2{grid-template-columns:minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,110px) minmax(0,90px) minmax(0,90px) minmax(0,1fr)}
+.inv-calc{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.inv-tools{display:flex;gap:10px;align-items:end;flex-wrap:wrap}
+.inv-tools .fld{width:auto}
+@media (max-width:1100px){.f-inv1,.f-inv2{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.f-inv1,.f-inv2,.inv-calc{grid-template-columns:minmax(0,1fr)}}
 .tbl.log td{vertical-align:top}
 .tbl.log td.w{min-width:160px}
 
@@ -226,6 +234,7 @@ dl.calc div.tot dt{color:var(--ink);font-weight:600} dl.calc div.tot dd{font-wei
       <button class="tab" role="tab" data-tab="nomina">Nómina</button>
       <button class="tab" role="tab" data-tab="trab">Trabajadores</button>
       <button class="tab" role="tab" data-tab="inf">Informes</button>
+      <button class="tab" role="tab" data-tab="inv">Inventario</button>
       <button class="tab" role="tab" data-tab="cfg">Configuración</button>
     </nav>
   </div>
@@ -266,6 +275,7 @@ const sum=(arr,fn)=>arr.reduce((a,x)=>a+(fn?fn(x):x||0),0)||0;
 const clone=o=>JSON.parse(JSON.stringify(o));
 function miles(n){return String(Math.abs(Math.round(n))).replace(/\B(?=(\d{3})+(?!\d))/g,'.');}
 function fmt(n){n=Math.round(n||0);return (n<0?'−':'')+'$'+miles(n);}
+function fmtDec(n){if(n==null||!isFinite(n))return '—';const neg=n<0;n=Math.abs(n);const e=Math.floor(n),d=Math.round((n-e)*100);const E=d===100?e+1:e,D=d===100?0:d;return (neg?'−':'')+'$'+miles(E)+','+pad(D);}
 function fmtIn(n){return (n==null||n==='')?'':miles(n);}
 function parseMoney(s){const d=String(s==null?'':s).replace(/[^\d]/g,'');return d===''?null:parseInt(d,10);}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
@@ -294,7 +304,7 @@ function qCorta(id){const o=qParse(id);return 'Q'+o.q+' '+MESES[o.m-1].slice(0,3
 
 /* ───────── Estado ───────── */
 let db=null, downloads=null;
-const S={config:DEFAULT_CONFIG(),workers:{},jornadas:{},quincenas:{},egnom:{},logDoc:null,cargado:false,dbOk:false,loadError:null};
+const S={config:DEFAULT_CONFIG(),workers:{},jornadas:{},quincenas:{},egnom:{},inv:{},logDoc:null,cargado:false,dbOk:false,loadError:null};
 const UI={tab:'flujo',fecha:jornadaActual(),turno:turnoActual(),q:qId(qDe(hoy())),drafts:{},edit:null,confirm:null,err:{},wSel:null,wRetiro:null,modal:null,log:null,restore:null,msg:{},focus:null};
 function dv(k,def){return Object.prototype.hasOwnProperty.call(UI.drafts,k)?UI.drafts[k]:(def==null?'':def);}
 function clearDrafts(prefix){Object.keys(UI.drafts).forEach(k=>{if(k.indexOf(prefix)===0)delete UI.drafts[k];});}
@@ -455,7 +465,7 @@ function render(){
   document.querySelectorAll('#tabs .tab').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===UI.tab)));
   $('#saldos').innerHTML=S.cargado?vSaldos():'';
   $('#main').innerHTML=!S.cargado?'<div class="loading">Cargando la información de la panadería…</div>':
-    vAvisos()+(UI.tab==='flujo'?vFlujo():UI.tab==='nomina'?vNomina():UI.tab==='trab'?vTrab():UI.tab==='inf'?vInf():vCfg());
+    vAvisos()+(UI.tab==='flujo'?vFlujo():UI.tab==='nomina'?vNomina():UI.tab==='trab'?vTrab():UI.tab==='inf'?vInf():UI.tab==='inv'?vInv():vCfg());
   $('#modal').innerHTML=UI.modal?vModal():'';
   const target=UI.focus||id;UI.focus=null;
   if(target){const el=document.getElementById(target);if(el){el.focus({preventScroll:true});if(target===id&&ss!=null){try{el.setSelectionRange(ss,se);}catch(_){}}}}
@@ -839,6 +849,54 @@ function vInf(){
   return h;
 }
 
+/* ── Inventario ── */
+const UNIDADES={g:{nombre:'g',gramos:1},kg:{nombre:'kg',gramos:1000},lb:{nombre:'lb (500 g)',gramos:500}};
+function invTodos(){const out=[];Object.values(S.inv).forEach(M=>(M.entries||[]).forEach(e=>out.push(e)));return out;}
+function invCalc(peso,unidad,cant,vu){
+  const g=(Number(peso)||0)*((UNIDADES[unidad]||UNIDADES.g).gramos);
+  const total=vu!=null&&cant?vu*cant:null;
+  const cg=vu!=null&&g>0?vu/g:null;
+  return {gramos:g,total:total,cg:cg,ck:cg==null?null:cg*1000};
+}
+function invCalcHTML(c){
+  return '<div class="kpi"><small>Costo total</small><b>'+(c.total==null?'—':fmt(c.total))+'</b><em>Valor unitario × cantidad</em></div>'+
+    '<div class="kpi"><small>Costo gramo</small><b>'+fmtDec(c.cg)+'</b><em>Valor unitario ÷ gramos de la presentación</em></div>'+
+    '<div class="kpi"><small>Costo kilo</small><b>'+(c.ck==null?'—':fmt(c.ck))+'</b><em>Costo gramo × 1.000</em></div>';
+}
+function vInv(){
+  const ed=UI.edit&&UI.edit.kind==='inv';
+  const c=invCalc(dv('iv-peso'),dv('iv-uni','kg'),parseInt(dv('iv-cant','1'),10)||0,parseMoney(dv('iv-vu')));
+  const todos=invTodos();
+  const provs=[...new Set(todos.map(e=>e.proveedor))].sort((a,b)=>a.localeCompare(b,'es'));
+  const prods=[...new Set(todos.map(e=>e.producto))].sort((a,b)=>a.localeCompare(b,'es'));
+  let h='<div class="bar"><div class="jtitle"><h2>Inventario</h2><p>Facturas de compra por proveedor y producto, con costo por gramo y por kilo</p></div></div>';
+  h+='<section class="card"><div class="card-h"><h3>'+(ed?'Editar producto de factura':'Ingresar factura')+'</h3><p>Fecha, proveedor y factura se mantienen para seguir agregando productos de la misma factura</p></div>'+
+    '<div class="formrow f-inv1"><label class="fld"><span>Fecha</span><input type="date" id="d-iv-fecha" data-draft="iv-fecha" value="'+esc(dv('iv-fecha',hoy()))+'"></label>'+
+    '<label class="fld"><span>Proveedor</span><input type="text" id="d-iv-prov" data-draft="iv-prov" list="dl-prov" value="'+esc(dv('iv-prov'))+'" placeholder="Ej. Harinera del Valle"></label>'+
+    '<label class="fld"><span>N.º de factura (opcional)</span><input type="text" id="d-iv-fac" data-draft="iv-fac" value="'+esc(dv('iv-fac'))+'"></label></div>'+
+    '<div class="formrow f-inv2" style="margin-top:10px"><label class="fld"><span>Producto</span><input type="text" id="d-iv-prod" data-draft="iv-prod" list="dl-prod" value="'+esc(dv('iv-prod'))+'" placeholder="Ej. Harina de trigo"></label>'+
+    '<label class="fld"><span>Presentación</span><input type="text" id="d-iv-pres" data-draft="iv-pres" value="'+esc(dv('iv-pres'))+'" placeholder="Ej. Bulto, paquete"></label>'+
+    '<label class="fld"><span>Peso por unidad</span><input type="number" min="0" step="any" id="d-iv-peso" data-draft="iv-peso" data-live="inv" value="'+esc(dv('iv-peso'))+'" placeholder="50"></label>'+
+    '<label class="fld"><span>Medida</span><select id="d-iv-uni" data-draft="iv-uni" data-live="inv">'+Object.keys(UNIDADES).map(k=>'<option value="'+k+'"'+(k===dv('iv-uni','kg')?' selected':'')+'>'+UNIDADES[k].nombre+'</option>').join('')+'</select></label>'+
+    '<label class="fld"><span>Cantidad</span><input type="number" min="1" step="1" id="d-iv-cant" data-draft="iv-cant" data-live="inv" value="'+esc(dv('iv-cant','1'))+'"></label>'+
+    '<label class="fld"><span>Valor unitario</span>'+money('d-iv-vu','data-draft="iv-vu" data-live="inv" data-enter="inv-guardar"',dv('iv-vu'))+'</label></div>'+
+    '<div class="inv-calc" id="inv-calc">'+invCalcHTML(c)+'</div>'+
+    '<div class="btnrow" style="margin-top:12px"><button class="btn primary" data-act="inv-guardar">'+(ed?'Guardar cambios':'+ Agregar a la factura')+'</button>'+(ed?'<button class="btn" data-act="inv-cancelar">Cancelar</button>':'<button class="btn" data-act="inv-nueva">Nueva factura</button>')+'</div>'+errHTML('inv')+
+    '<datalist id="dl-prov">'+provs.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist><datalist id="dl-prod">'+prods.map(x=>'<option value="'+esc(x)+'">').join('')+'</datalist></section>';
+  const mes=dv('iv-mes',hoy().slice(0,7)),busca=dv('iv-buscar').trim().toLowerCase();
+  const lista=todos.filter(e=>e.fecha.slice(0,7)===mes&&(!busca||(e.producto+' '+e.proveedor+' '+(e.factura||'')).toLowerCase().indexOf(busca)>=0))
+    .sort((a,b)=>b.fecha.localeCompare(a.fecha)||(a.proveedor+(a.factura||'')).localeCompare(b.proveedor+(b.factura||''),'es'));
+  h+='<section class="card"><div class="card-h"><h3>Facturas registradas</h3><div class="inv-tools"><label class="fld"><span>Mes</span><input type="month" id="d-iv-mes" data-draft="iv-mes" data-rerender="1" value="'+esc(mes)+'"></label>'+
+    '<label class="fld"><span>Buscar</span><input type="search" id="d-iv-buscar" data-draft="iv-buscar" data-rerender="1" placeholder="Producto, proveedor o factura" value="'+esc(dv('iv-buscar'))+'"></label></div></div>';
+  if(lista.length){
+    h+='<div class="tw"><table class="tbl"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Producto</th><th>Presentación</th><th class="m">Cant.</th><th class="m">Valor unitario</th><th class="m">Costo total</th><th class="m">Costo gramo</th><th class="m">Costo kilo</th><th></th></tr></thead><tbody>'+
+      lista.map(e=>'<tr class="'+(ed&&UI.edit.id===e.id?'editing':'')+'"><td style="white-space:nowrap">'+fechaMed(e.fecha)+'</td><td>'+esc(e.proveedor)+'</td><td>'+(e.factura?esc(e.factura):'<span class="muted">—</span>')+'</td><td>'+esc(e.producto)+'</td><td>'+esc(e.presentacion||'')+' <span class="muted small">'+esc(String(e.peso))+' '+esc((UNIDADES[e.unidad]||UNIDADES.g).nombre)+'</span></td><td class="m">'+e.cantidad+'</td><td class="m">'+fmt(e.valorUnitario)+'</td><td class="m">'+fmt(e.costoTotal)+'</td><td class="m">'+fmtDec(e.costoGramo)+'</td><td class="m">'+fmt(e.costoKilo)+'</td><td class="act">'+
+        (UI.confirm==='inv:'+e.id?'<button class="btn sm danger solid" data-act="inv-borrar" data-id="'+e.id+'">Sí, borrar</button> <button class="btn sm" data-act="no-borrar">No</button>':'<button class="btn sm ghost" data-act="inv-editar" data-id="'+e.id+'">Editar</button> <button class="btn sm ghost danger" data-act="inv-borrar" data-id="'+e.id+'">Borrar</button>')+'</td></tr>').join('')+
+      '</tbody><tfoot><tr><td colspan="7">Total del mes'+(busca?' (filtrado)':'')+'</td><td class="m">'+fmt(sum(lista,e=>e.costoTotal))+'</td><td colspan="3"></td></tr></tfoot></table></div>';
+  }else h+='<div class="empty">No hay facturas registradas en '+MESES[Number(mes.slice(5,7))-1]+' de '+mes.slice(0,4)+(busca?' con esa búsqueda':'')+'.</div>';
+  return h+'</section>';
+}
+
 /* ── Configuración ── */
 function vCfg(){
   const s=calcSaldos();
@@ -850,7 +908,7 @@ function vCfg(){
     '<label class="fld"><span>Saldo inicial</span>'+money('d-cta-i','data-draft="cta-i" data-enter="cta-agregar"',dv('cta-i'))+'</label><button class="btn primary" data-act="cta-agregar">Agregar cuenta</button></div>'+errHTML('cta')+'</section>';
   h+='<section class="card"><div class="card-h"><h3>Comisión de datáfonos</h3><p>Si es mayor que 0%, se muestra lo que llega al banco</p></div><div class="ing" style="grid-template-columns:repeat(3,minmax(0,1fr))">'+
     DATAFONOS.map(d=>'<label class="fld"><span>'+d.nombre+' (%)</span><input type="number" step="0.01" min="0" max="100" id="cc-'+d.k+'" data-commit="cfg-com" data-k="'+d.k+'" value="'+esc(S.config.comision[d.k]||0)+'"></label>').join('')+'</div></section>';
-  h+='<section class="card"><div class="card-h"><h3>Copia de seguridad</h3></div><p class="small muted" style="margin-bottom:10px">Descarga toda la información (trabajadores, jornadas, nómina, configuración y registro de cambios) en un archivo .json. Para restaurarla, elige ese archivo.</p>'+
+  h+='<section class="card"><div class="card-h"><h3>Copia de seguridad</h3></div><p class="small muted" style="margin-bottom:10px">Descarga toda la información (trabajadores, jornadas, nómina, inventario, configuración y registro de cambios) en un archivo .json. Para restaurarla, elige ese archivo.</p>'+
     '<div class="btnrow"><button class="btn primary" data-act="backup">Descargar copia</button><label class="btn" for="restore-file">Restaurar desde archivo</label><input type="file" id="restore-file" accept=".json,application/json" hidden></div>'+
     (UI.msg.backup?'<div class="note info" style="margin-top:10px">'+esc(UI.msg.backup)+'</div>':'')+'</section></div>';
   const L=UI.log;
@@ -1029,6 +1087,47 @@ function agregarTrabajador(){
   clearDrafts('wn-');UI.err.wn=null;UI.wSel=w.id;UI.focus='d-wn-n';render();
 }
 
+/* Inventario */
+function invMesDoc(mes){if(!S.inv[mes])S.inv[mes]={id:mes,entries:[]};return S.inv[mes];}
+function dInv(e){return e.proveedor+(e.factura?' · Fact. '+e.factura:'')+' · '+e.producto+' · '+(e.presentacion||'')+' '+e.peso+' '+(UNIDADES[e.unidad]||UNIDADES.g).nombre+' × '+e.cantidad+' · Unitario '+fmt(e.valorUnitario)+' · Total '+fmt(e.costoTotal)+' · Kilo '+fmt(e.costoKilo);}
+function invBuscar(id){for(const mes in S.inv){const L=S.inv[mes].entries||[];const i=L.findIndex(x=>x.id===id);if(i>=0)return {mes:mes,i:i,e:L[i]};}return null;}
+function guardarInv(){
+  const fecha=dv('iv-fecha',hoy()),prov=dv('iv-prov').trim(),fac=dv('iv-fac').trim(),prod=dv('iv-prod').trim(),pres=dv('iv-pres').trim();
+  const peso=parseFloat(String(dv('iv-peso')).replace(',','.')),uni=dv('iv-uni','kg'),cant=parseInt(dv('iv-cant','1'),10),vu=parseMoney(dv('iv-vu'));
+  if(!fecha)return err('inv','Elige la fecha de la factura.');
+  if(!prov)return err('inv','Escribe el proveedor.');
+  if(!prod)return err('inv','Escribe el producto.');
+  if(!(peso>0))return err('inv','Escribe el peso de cada unidad de la presentación (por ejemplo, 50 kg).');
+  if(!(cant>=1))return err('inv','La cantidad debe ser 1 o más.');
+  if(!vu)return err('inv','Escribe el valor unitario.');
+  const c=invCalc(peso,uni,cant,vu);
+  const datos={fecha:fecha,proveedor:prov,factura:fac,producto:prod,presentacion:pres,peso:peso,unidad:uni,gramos:c.gramos,cantidad:cant,valorUnitario:vu,costoTotal:c.total,costoGramo:Math.round(c.cg*10000)/10000,costoKilo:Math.round(c.ck)};
+  const mes=fecha.slice(0,7);
+  if(UI.edit&&UI.edit.kind==='inv'){
+    const f=invBuscar(UI.edit.id);
+    if(f){const an=dInv(f.e);const r=Object.assign({},f.e,datos);
+      if(f.mes!==mes){S.inv[f.mes].entries.splice(f.i,1);persist('inventario/'+f.mes,S.inv[f.mes]);invMesDoc(mes).entries.push(r);}
+      else S.inv[mes].entries[f.i]=r;
+      persist('inventario/'+mes,S.inv[mes]);log('Editó','Inventario · factura del '+fechaMed(fecha),an,dInv(r));}
+    UI.edit=null;
+  }else{
+    const r=Object.assign({id:uid()},datos);invMesDoc(mes).entries.push(r);persist('inventario/'+mes,S.inv[mes]);log('Creó','Inventario · factura del '+fechaMed(fecha),'',dInv(r));
+  }
+  ['iv-prod','iv-pres','iv-peso','iv-vu'].forEach(k=>delete UI.drafts[k]);UI.drafts['iv-cant']='1';
+  UI.drafts['iv-mes']=mes;UI.err.inv=null;UI.focus='d-iv-prod';render();
+}
+function editarInv(id){
+  const f=invBuscar(id);if(!f)return;const e=f.e;UI.confirm=null;
+  Object.assign(UI.drafts,{'iv-fecha':e.fecha,'iv-prov':e.proveedor,'iv-fac':e.factura||'','iv-prod':e.producto,'iv-pres':e.presentacion||'','iv-peso':String(e.peso),'iv-uni':e.unidad,'iv-cant':String(e.cantidad),'iv-vu':fmtIn(e.valorUnitario)});
+  UI.edit={kind:'inv',id:id};UI.focus='d-iv-vu';window.scrollTo(0,0);render();
+}
+function borrarInv(id){
+  if(UI.confirm!=='inv:'+id){UI.confirm='inv:'+id;render();return;}
+  UI.confirm=null;const f=invBuscar(id);if(!f)return render();
+  S.inv[f.mes].entries.splice(f.i,1);persist('inventario/'+f.mes,S.inv[f.mes]);log('Borró','Inventario · factura del '+fechaMed(f.e.fecha),dInv(f.e),'');
+  if(UI.edit&&UI.edit.id===id)UI.edit=null;render();
+}
+
 /* Configuración */
 function agregarCuenta(){
   const n=dv('cta-n').trim(),i=parseMoney(dv('cta-i'))||0;
@@ -1055,7 +1154,7 @@ async function descargarBackup(){
   UI.msg.backup='Preparando la copia…';render();
   try{
     const cambios=db?await loadAll('cambios','id'):[];
-    const data={app:'panaderia-barcelona',version:1,exportado:new Date().toISOString(),config:S.config,trabajadores:S.workers,jornadas:S.jornadas,quincenas:S.quincenas,egresosnomina:S.egnom,cambios:cambios};
+    const data={app:'panaderia-barcelona',version:1,exportado:new Date().toISOString(),config:S.config,trabajadores:S.workers,jornadas:S.jornadas,quincenas:S.quincenas,egresosnomina:S.egnom,inventario:S.inv,cambios:cambios};
     await downloads.save({filename:'PanaderiaBarcelona_copia_'+hoy()+'.json',data:JSON.stringify(data)});
     UI.msg.backup='Copia descargada.';
   }catch(e){UI.msg.backup=e&&e.code==='declined'?'Descarga cancelada.':'No se pudo descargar la copia ('+(e&&e.code||'error')+').';}
@@ -1080,12 +1179,12 @@ async function restaurar(){
   try{
     const camAct={};(await loadAll('cambios','id')).forEach(c=>camAct[c.id]=c);
     const camNew={};(d.cambios||[]).forEach(c=>{if(c&&c.id)camNew[c.id]=c;});
-    plan('trabajadores',S.workers,d.trabajadores||{});plan('jornadas',S.jornadas,d.jornadas||{});plan('quincenas',S.quincenas,d.quincenas||{});plan('egresosnomina',S.egnom,d.egresosnomina||{});plan('cambios',camAct,camNew);
+    plan('trabajadores',S.workers,d.trabajadores||{});plan('jornadas',S.jornadas,d.jornadas||{});plan('quincenas',S.quincenas,d.quincenas||{});plan('egresosnomina',S.egnom,d.egresosnomina||{});plan('inventario',S.inv,d.inventario||{});plan('cambios',camAct,camNew);
     ops.push(()=>db.doc('config/main').set(d.config));
     let hechos=0;
     const worker=async()=>{while(ops.length){const op=ops.shift();await retry(op);hechos++;if(hechos%10===0){UI.restore.progreso='Restaurando… '+hechos+' registros';render();}}};
     await Promise.all([worker(),worker(),worker(),worker()]);
-    S.config=Object.assign(DEFAULT_CONFIG(),d.config);S.workers=d.trabajadores||{};S.jornadas=d.jornadas||{};S.quincenas=d.quincenas||{};S.egnom=d.egresosnomina||{};
+    S.config=Object.assign(DEFAULT_CONFIG(),d.config);S.workers=d.trabajadores||{};S.jornadas=d.jornadas||{};S.quincenas=d.quincenas||{};S.egnom=d.egresosnomina||{};S.inv=d.inventario||{};
     S.logDoc=null;await cargarLogHoy();
     log('Restauró','Copia de seguridad · '+UI.restore.nombre,'','Información reemplazada');
     UI.modal=null;UI.msg.backup='Copia restaurada ('+hechos+' registros).';UI.restore=null;UI.log=null;
@@ -1139,6 +1238,11 @@ document.addEventListener('click',e=>{
     case 'inf-tipo':UI.drafts['inf-tipo']=el.dataset.v;render();break;
     case 'ir-jornada':UI.tab='flujo';cambiarJornada(el.dataset.f);window.scrollTo(0,0);break;
     case 'cta-agregar':agregarCuenta();break;
+    case 'inv-guardar':guardarInv();break;
+    case 'inv-editar':editarInv(el.dataset.id);break;
+    case 'inv-borrar':borrarInv(el.dataset.id);break;
+    case 'inv-cancelar':UI.edit=null;['iv-prod','iv-pres','iv-peso','iv-vu','iv-cant'].forEach(k=>delete UI.drafts[k]);render();break;
+    case 'inv-nueva':['iv-prov','iv-fac','iv-prod','iv-pres','iv-peso','iv-vu','iv-cant'].forEach(k=>delete UI.drafts[k]);UI.drafts['iv-fecha']=hoy();UI.err.inv=null;UI.focus='d-iv-prov';render();break;
     case 'log-cargar':cargarLog();break;
     case 'backup':descargarBackup();break;
   }
@@ -1155,6 +1259,7 @@ document.addEventListener('input',e=>{
   const el=e.target;
   if(el.classList.contains('money')){const n=parseMoney(el.value),f=n==null?'':fmtIn(n);if(el.value!==f)el.value=f;}
   if(el.dataset.draft){UI.drafts[el.dataset.draft]=el.value;if(el.dataset.rerender&&el.type==='search')later();}
+  if(el.dataset.live==='inv'){const box=$('#inv-calc');if(box)box.innerHTML=invCalcHTML(invCalc(dv('iv-peso'),dv('iv-uni','kg'),parseInt(dv('iv-cant','1'),10)||0,parseMoney(dv('iv-vu'))));}
   if(el.dataset.live==='arqueo'){
     const esp=$('#arq-esp'),v=parseMoney(el.value),t=turnoLeer(UI.fecha,UI.turno);
     $('#arq-dif').innerHTML=difHTML(v,Number(esp.dataset.v));$('#arq-fuerte').innerHTML=fuerteHTML(v,Number(esp.dataset.base),t.cerrado);
@@ -1212,13 +1317,14 @@ async function init(){
   }
   if(db){
     try{
-      const res=await Promise.all([retry(()=>db.doc('config/main').get()),loadAll('trabajadores','orden'),loadAll('jornadas','fecha'),loadAll('quincenas','id'),loadAll('egresosnomina','id')]);
+      const res=await Promise.all([retry(()=>db.doc('config/main').get()),loadAll('trabajadores','orden'),loadAll('jornadas','fecha'),loadAll('quincenas','id'),loadAll('egresosnomina','id'),loadAll('inventario','id')]);
       const cfg=res[0].exists?clone(res[0].data()):null;
       if(cfg){const D=DEFAULT_CONFIG();S.config=Object.assign(D,cfg,{comision:Object.assign(D.comision,cfg.comision||{})});if(!cfg.cuentas)S.config.cuentas=D.cuentas;}
       res[1].forEach(w=>S.workers[w.id]=w);
       res[2].forEach(j=>S.jornadas[j.fecha]=j);
       res[3].forEach(q=>{q.filas=q.filas||{};S.quincenas[q.id]=q;});
       res[4].forEach(e=>S.egnom[e.id]=e);
+      res[5].forEach(m=>{m.entries=m.entries||[];S.inv[m.id]=m;});
       await cargarLogHoy();
       S.dbOk=true;
     }catch(e){S.loadError=(e&&e.code)||String(e);db=null;}
