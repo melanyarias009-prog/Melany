@@ -262,8 +262,8 @@ const DATAFONOS=[
   {k:'bancolombia',nombre:'Datáfono Bancolombia',cuenta:'bancolombia'},
   {k:'bold',nombre:'Datáfono Bold',cuenta:'bold'}
 ];
-const CATS={produccion:'Costos de producción',prestamo:'Préstamo a trabajador',gastos:'Gastos',imprevistos:'Imprevistos',aseo:'Aseo',nomina:'Nómina',fabian:'Don Fabián'};
-const CATS_MANUAL=['produccion','prestamo','gastos','imprevistos','aseo','nomina','fabian'];
+const CATS={produccion:'Costos de producción',prestamo:'Préstamo a trabajador',gastos:'Gastos',imprevistos:'Imprevistos',aseo:'Aseo',nomina:'Nómina',fabian:'Don Fabián',arriendo:'Arriendo',servicios:'Servicios'};
+const CATS_MANUAL=['produccion','prestamo','gastos','arriendo','servicios','imprevistos','aseo','nomina','fabian'];
 const MESES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS=['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 function DEFAULT_CONFIG(){return {
@@ -696,14 +696,14 @@ function hojaDia(f){
   let tDat=0,tEf=0;if(j)[1,2,3].forEach(n=>{const t=j.turnos[n];tEf+=t.ingresos.efectivo||0;tDat+=ingresosDinero(t)-(t.ingresos.efectivo||0);});
   const H={fecha:f,titulo:'Jornada del '+fechaLarga(f)+' · '+fechaCorta(addDays(f,-1))+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm',
     materia:cat('produccion'),nomina:cat('nomina')+nomAuto,imprevistos:cat('imprevistos'),aseo:cat('aseo'),fabian:cat('fabian'),
-    otros:cat('gastos')+cat('prestamo'),egresosDia:sum(todos,e=>e.valor)+nomAuto,
+    otros:cat('gastos')+cat('arriendo')+cat('servicios')+cat('prestamo'),egresosDia:sum(todos,e=>e.valor)+nomAuto,
     datDia:m.dat,efDia:m.ef,ventaTotal:tDat+tEf,egDat:m.egDat,egEf:m.egEf,
     datAnt:ant.dat,datAct:ant.dat+m.dat-m.egDat,efAnt:ant.ef,efAct:ant.ef+m.ef-m.egEf};
   return H;
 }
 function hojaSecciones(H){
   const eg=[['Materia prima',H.materia],['Nómina',H.nomina],['Imprevistos',H.imprevistos],['Aseo',H.aseo],['Don Fabián',H.fabian]];
-  if(H.otros)eg.push(['Otros (gastos y préstamos)',H.otros]);
+  if(H.otros)eg.push(['Otros (gastos, arriendo, servicios y préstamos)',H.otros]);
   eg.push(['Egresos del día',H.egresosDia,true]);
   return [
     {t:'Venta del día',rows:[['Datáfono del día',H.datDia],['Efectivo del día',H.efDia],['Venta total',H.ventaTotal,true]]},
