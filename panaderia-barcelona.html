@@ -403,6 +403,8 @@ function ingresosDinero(t){return (t.ingresos.davivienda||0)+(t.ingresos.bancolo
 function egnomDe(f,n){return Object.values(S.egnom).filter(e=>e.jornada===f&&(n===undefined?true:e.turno===n));}
 /* Egresos registrados a nivel de jornada (Caja fuerte, datáfono y otras cuentas, sin turno) */
 function egDia(f){const j=S.jornadas[f];return (j&&j.egresosDia)||[];}
+/* Consumos registrados a nivel de jornada (sin turno); solo cuentan para la nómina */
+function valesDia(f){const j=S.jornadas[f];return (j&&j.valesDia)||[];}
 function arqueo(f,n){
   const t=turnoLeer(f,n),base=turnoBase(t),efectivo=t.ingresos.efectivo||0;
   const egCaja=sum(t.egresos.filter(e=>e.origen==='caja'),e=>e.valor)+sum(egnomDe(f,n).filter(e=>e.origen==='caja'),e=>e.valor);
@@ -438,7 +440,8 @@ function cargosIndex(){
     const t=j.turnos[n];
     t.vales.forEach(v=>{(C[v.workerId]=C[v.workerId]||[]).push({tipo:'Vale',fecha:f,turno:n,monto:v.valor,due:qi,ref:v.id});});
     t.egresos.forEach(e=>prest(e,f,n,qi));
-  });(j.egresosDia||[]).forEach(e=>prest(e,f,null,qi));});
+  });(j.egresosDia||[]).forEach(e=>prest(e,f,null,qi));
+  (j.valesDia||[]).forEach(v=>{(C[v.workerId]=C[v.workerId]||[]).push({tipo:'Vale',fecha:f,turno:null,monto:v.valor,due:qi,ref:v.id});});});
   function prest(e,f,n,qi){if(e.cat!=='prestamo'||!e.workerId)return;
     const k=Math.max(1,parseInt(e.cuotas,10)||1),b=Math.floor(e.valor/k);
     for(let i=0;i<k;i++)(C[e.workerId]=C[e.workerId]||[]).push({tipo:'Préstamo',fecha:f,turno:n,monto:i<k-1?b:e.valor-b*(k-1),due:qi+i,cuota:i+1,de:k,ref:e.id,desc:e.desc,total:e.valor});
@@ -517,7 +520,7 @@ function vFlujo(){
     '<div class="jtitle"><h2>Jornada del '+fechaLarga(f)+'</h2><p>'+fechaCorta(ant)+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm</p></div>'+
     '<button class="btn" data-act="imprimir" style="margin-left:auto">Imprimir</button></div>';
   h+='<div class="turns" role="group" aria-label="Turnos">'+[1,2,3].map(k=>'<button class="turn" data-act="turno" data-n="'+k+'" aria-pressed="'+(k===n)+'"><span><b>Turno '+k+'</b><small>'+turnoRango(f,k)+'</small></span>'+estadoTurno(f,k)+'</button>').join('')+
-    (function(){const L=egDia(f);return '<button class="turn" data-act="turno-dia" aria-pressed="'+esDia+'"><span><b>Egresos de la jornada</b><small>Caja fuerte y datáfono</small></span>'+(L.length?'<span class="chip acc">'+fmt(sum(L,e=>e.valor))+'</span>':'<span class="chip">Sin registros</span>')+'</button>';})()+'</div>';
+    (function(){const L=egDia(f),V=valesDia(f);return '<button class="turn" data-act="turno-dia" aria-pressed="'+esDia+'"><span><b>Egresos de la jornada</b><small>Caja fuerte, datáfono y consumo</small></span>'+(L.length?'<span class="chip acc">'+fmt(sum(L,e=>e.valor))+'</span>':V.length?'<span class="chip acc">'+V.length+(V.length===1?' consumo':' consumos')+'</span>':'<span class="chip">Sin registros</span>')+'</button>';})()+'</div>';
   if(esDia)h+=cEgresosDia(f);
   else h+='<div class="fgrid"><div class="stack">'+cIngresos(t)+cVales(t)+cEgresos(t)+cTraslados(t)+'</div><aside class="side">'+cArqueo(f,n,t)+'</aside></div>';
   h+=cResumen(f);
@@ -598,6 +601,21 @@ function cEgresosDia(f){
       lst.map(e=>'<tr class="'+(ed&&UI.edit.id===e.id?'editing':'')+'"><td>'+CATS[e.cat]+'</td><td>'+(e.cat==='prestamo'?'<b>'+esc(nombreW(e.workerId))+'</b>'+((e.cuotas||1)>1?' · '+e.cuotas+' cuotas':'')+(e.desc?' · ':''):'')+esc(e.desc||(e.cat==='prestamo'?'':'—'))+'</td><td>'+esc(lugar(e.origen))+'</td><td class="m">'+fmt(e.valor)+'</td><td class="act">'+delBtns('egdia',e.id)+'</td></tr>').join('')+
       '</tbody><tfoot><tr><td colspan="3">Total egresos de la jornada</td><td class="m">'+fmt(sum(lst,e=>e.valor))+'</td><td></td></tr></tfoot></table></div>';
   }else h+='<div class="empty">No hay egresos de la jornada.</div>';
+  h+='</section>'+cConsumoDia(f);
+  return h;
+}
+function cConsumoDia(f){
+  const lst=valesDia(f),ed=UI.edit&&UI.edit.kind==='valedia',nv=lst.length;
+  let h='<section class="card" style="margin-top:14px"><div class="card-h"><h3>Consumo de la jornada'+(nv?' <span class="chip acc">'+nv+(nv===1?' consumo':' consumos')+'</span>':'')+'</h3><p>Solo se descuentan en la nómina · no tocan ingresos, arqueo, Caja fuerte ni cuentas</p></div>'+
+    '<div class="formrow f-vale"><label class="fld"><span>Trabajador</span><select id="d-cd-w" data-draft="cd-w">'+optWorkers(dv('cd-w'))+'</select></label>'+
+    '<label class="fld"><span>Valor</span>'+money('d-cd-v','data-draft="cd-v" data-enter="cd-guardar"',dv('cd-v'))+'</label>'+
+    '<label class="fld"><span>De dónde sale (informativo)</span><select id="d-cd-o" data-draft="cd-o">'+optLugares(dv('cd-o'),true)+'</select></label>'+
+    '<div class="btnrow"><button class="btn primary" data-act="cd-guardar">'+(ed?'Guardar cambios':(nv?'+ Agregar otro consumo':'+ Agregar consumo'))+'</button>'+(ed?'<button class="btn" data-act="cancelar-edit">Cancelar</button>':'')+'</div></div>'+errHTML('cd');
+  if(nv){
+    h+='<div class="tw"><table class="tbl"><thead><tr><th>Trabajador</th><th>De dónde sale</th><th class="m">Valor</th><th></th></tr></thead><tbody>'+
+      lst.map(v=>'<tr class="'+(ed&&UI.edit.id===v.id?'editing':'')+'"><td>'+esc(nombreW(v.workerId))+'</td><td>'+(v.origen?esc(lugar(v.origen)):'<span class="muted">—</span>')+'</td><td class="m">'+fmt(v.valor)+'</td><td class="act">'+delBtns('valedia',v.id)+'</td></tr>').join('')+
+      '</tbody><tfoot><tr><td colspan="2">Total consumo de la jornada</td><td class="m">'+fmt(sum(lst,v=>v.valor))+'</td><td></td></tr></tfoot></table></div>';
+  }else h+='<div class="empty">No hay consumos registrados en la jornada.</div>';
   return h+'</section>';
 }
 function difHTML(contado,esperado){
@@ -862,7 +880,7 @@ function vDetalle(w,C){
     '<div class="kpi"><small>Saldo pendiente</small><b class="'+(saldo>0?'neg':'')+'">'+fmt(saldo)+'</b>'+(saldo<0?'<em>Se le descontó de más</em>':'')+'</div>'+
     (w.activo?'<div class="kpi"><small>Se descuenta en '+qCorta(qAct)+'</small><b>'+fmt(proxima)+'</b></div>':'')+'</div></section>';
   h+='<section class="card"><div class="card-h"><h3>Consumo</h3><p>'+vales.length+' · '+fmt(sum(vales,v=>v.monto))+'</p></div>'+(vales.length?'<div class="tw"><table class="tbl"><thead><tr><th>Jornada</th><th>Turno</th><th>Se descuenta en</th><th class="m">Valor</th></tr></thead><tbody>'+
-    vales.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(v=>'<tr><td>'+fechaMed(v.fecha)+'</td><td>'+v.turno+'</td><td>'+qCorta(qId(qFromIdx(v.due)))+'</td><td class="m">'+fmt(v.monto)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin consumos.</div>')+'</section>';
+    vales.slice().sort((a,b)=>b.fecha.localeCompare(a.fecha)).map(v=>'<tr><td>'+fechaMed(v.fecha)+'</td><td>'+(v.turno||'Jornada')+'</td><td>'+qCorta(qId(qFromIdx(v.due)))+'</td><td class="m">'+fmt(v.monto)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin consumos.</div>')+'</section>';
   const ps=Object.values(prest).sort((a,b)=>b.fecha.localeCompare(a.fecha));
   h+='<section class="card"><div class="card-h"><h3>Préstamos y cuotas</h3><p>'+ps.length+' · '+fmt(sum(ps,p=>p.total))+'</p></div>'+(ps.length?'<div class="tw"><table class="tbl"><thead><tr><th>Jornada</th><th>Descripción</th><th>Cuotas</th><th class="m">Valor</th></tr></thead><tbody>'+
     ps.map(p=>'<tr><td>'+fechaMed(p.fecha)+'</td><td>'+esc(p.desc||'—')+'</td><td class="small">'+p.cuotas.map(c=>c.cuota+'/'+c.de+' '+qCorta(qId(qFromIdx(c.due)))+': '+fmt(c.monto)).join('<br>')+'</td><td class="m">'+fmt(p.total)+'</td></tr>').join('')+'</tbody></table></div>':'<div class="empty">Sin préstamos.</div>')+'</section>';
@@ -888,7 +906,8 @@ function calcInforme(desde,hasta){
     const v=sum(t.vales,x=>x.valor);R.vales+=v;
     t.egresos.forEach(e=>R.eg[e.cat]+=e.valor);
     const D=dia(j.fecha);D.ing+=ingresosDinero(t);D.vales+=v;D.eg+=sum(t.egresos,e=>e.valor);
-  });(j.egresosDia||[]).forEach(e=>{R.eg[e.cat]+=e.valor;dia(j.fecha).eg+=e.valor;});});
+  });(j.egresosDia||[]).forEach(e=>{R.eg[e.cat]+=e.valor;dia(j.fecha).eg+=e.valor;});
+  const vd=sum(j.valesDia||[],x=>x.valor);if(vd){R.vales+=vd;dia(j.fecha).vales+=vd;}});
   Object.values(S.egnom).forEach(e=>{if(e.jornada<desde||e.jornada>hasta)return;R.eg.nomina+=e.valor;dia(e.jornada).eg+=e.valor;});
   R.totIng=sum(Object.values(R.ing));R.totEg=sum(Object.values(R.eg));
   return R;
@@ -1000,6 +1019,17 @@ function vCfg(){
 
 /* ───────── Acciones ───────── */
 function err(k,m){UI.err[k]=m;render();}
+function guardarValeDia(){
+  const w=dv('cd-w'),v=parseMoney(dv('cd-v')),o=dv('cd-o');
+  if(!w)return err('cd','Elige el trabajador.');
+  if(!v)return err('cd','Escribe el valor del consumo.');
+  if(!o)return err('cd','Elige de dónde sale el consumo.');
+  const j=getJornada(UI.fecha,true);if(!j.valesDia)j.valesDia=[];
+  const ctx='Jornada '+fechaMed(UI.fecha)+' · Consumo de la jornada';
+  if(UI.edit&&UI.edit.kind==='valedia'){const r=j.valesDia.find(x=>x.id===UI.edit.id);if(r){const an=dVale(r);r.workerId=w;r.valor=v;r.origen=o;log('Editó','Consumo · '+ctx,an,dVale(r));}UI.edit=null;}
+  else{const r={id:uid(),workerId:w,valor:v,origen:o};j.valesDia.push(r);log('Creó','Consumo · '+ctx,'',dVale(r));}
+  delete UI.drafts['cd-w'];delete UI.drafts['cd-v'];UI.err.cd=null;saveJornada(UI.fecha);UI.focus='d-cd-w';render();
+}
 function guardarVale(){
   const w=dv('vale-w'),v=parseMoney(dv('vale-v')),o=dv('vale-o');
   if(!w)return err('vale','Elige el trabajador.');
@@ -1051,6 +1081,7 @@ function editar(kind,id){
   const t=turnoLeer(UI.fecha,UI.turno);UI.confirm=null;
   if(kind==='vale'){const r=t.vales.find(x=>x.id===id);if(!r)return;UI.drafts['vale-w']=r.workerId;UI.drafts['vale-v']=fmtIn(r.valor);UI.drafts['vale-o']=r.origen||'';UI.focus='d-vale-v';}
   if(kind==='egreso'){const r=t.egresos.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'eg-cat':r.cat,'eg-v':fmtIn(r.valor),'eg-o':r.origen,'eg-desc':r.desc||'','eg-w':r.workerId||'','eg-cuotas':String(r.cuotas||1)});UI.focus='d-eg-v';}
+  if(kind==='valedia'){const r=valesDia(UI.fecha).find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'cd-w':r.workerId,'cd-v':fmtIn(r.valor),'cd-o':r.origen||''});UI.focus='d-cd-v';}
   if(kind==='egdia'){const r=egDia(UI.fecha).find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'ed-cat':r.cat,'ed-v':fmtIn(r.valor),'ed-o':r.origen,'ed-desc':r.desc||'','ed-w':r.workerId||'','ed-cuotas':String(r.cuotas||1)});UI.focus='d-ed-v';}
   if(kind==='traslado'){const r=t.traslados.find(x=>x.id===id);if(!r)return;Object.assign(UI.drafts,{'tr-o':r.origen,'tr-d':r.destino,'tr-v':fmtIn(r.valor),'tr-desc':r.desc||''});UI.focus='d-tr-v';}
   UI.edit={kind:kind,id:id};render();
@@ -1058,6 +1089,9 @@ function editar(kind,id){
 function borrar(kind,id){
   if(UI.confirm!==kind+':'+id){UI.confirm=kind+':'+id;render();return;}
   UI.confirm=null;
+  if(kind==='valedia'){const j=getJornada(UI.fecha,true),L=j.valesDia||[],i=L.findIndex(x=>x.id===id);if(i<0)return render();
+    const r=L.splice(i,1)[0];log('Borró','Consumo · Jornada '+fechaMed(UI.fecha)+' · Consumo de la jornada',dVale(r),'');
+    if(UI.edit&&UI.edit.id===id)UI.edit=null;saveJornada(UI.fecha);render();return;}
   if(kind==='egdia'){const j=getJornada(UI.fecha,true),L=j.egresosDia||[],i=L.findIndex(x=>x.id===id);if(i<0)return render();
     const r=L.splice(i,1)[0];log('Borró','Egreso · Jornada '+fechaMed(UI.fecha)+' · Egresos de la jornada',dEgreso(r),'');
     if(UI.edit&&UI.edit.id===id)UI.edit=null;saveJornada(UI.fecha);render();return;}
@@ -1069,7 +1103,7 @@ function borrar(kind,id){
   if(UI.edit&&UI.edit.id===id){UI.edit=null;}
   saveJornada(UI.fecha);render();
 }
-function cancelarEdit(){const k=UI.edit&&UI.edit.kind;UI.edit=null;if(k==='vale')clearDrafts('vale-');if(k==='egreso')clearDrafts('eg-');if(k==='traslado')clearDrafts('tr-');if(k==='egdia')clearDrafts('ed-');render();}
+function cancelarEdit(){const k=UI.edit&&UI.edit.kind;UI.edit=null;if(k==='vale')clearDrafts('vale-');if(k==='egreso')clearDrafts('eg-');if(k==='traslado')clearDrafts('tr-');if(k==='egdia')clearDrafts('ed-');if(k==='valedia')clearDrafts('cd-');render();}
 function cambiarJornada(f){if(!f)return;UI.fecha=f;UI.edit=null;UI.confirm=null;UI.err={};render();}
 function cerrarTurno(){
   const el=$('#arq-contado');if(el){const v=parseMoney(el.value);const t0=turnoLeer(UI.fecha,UI.turno);if(v!==t0.contado)commitContado(v,true);}
@@ -1282,6 +1316,7 @@ document.addEventListener('click',e=>{
     case 'eg-guardar':guardarEgreso();break;
     case 'tr-guardar':guardarTraslado();break;
     case 'ed-guardar':guardarEgDia();break;
+    case 'cd-guardar':guardarValeDia();break;
     case 'editar':editar(el.dataset.kind,el.dataset.id);break;
     case 'borrar':borrar(el.dataset.kind,el.dataset.id);break;
     case 'no-borrar':UI.confirm=null;render();break;
