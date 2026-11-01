@@ -453,11 +453,14 @@ function esUltimo(w,qid){return !!(w&&w.activo&&w.retiro&&!w.retiro.completado&&
 /* Cada quincena arranca con el consumo en cero: solo cuenta lo de esa quincena
    (consumo y cuota de préstamo que le toca) más lo que quedó pendiente en la
    quincena anterior ya pagada. En el último pago de un retiro se descuenta todo. */
-function deudaPara(wid,qid,C){
-  const w=S.workers[wid],idx=qIdxId(qid);
-  if(esUltimo(w,qid))return Math.max(0,sum(C[wid]||[],x=>x.monto)-descontado(wid,qid));
-  const propios=sum((C[wid]||[]).filter(x=>x.due===idx),x=>x.monto);
-  return propios+pendienteAnterior(wid,qid);
+function deudaPara(wid,qid,C){return deudaDetalle(wid,qid,C).total;}
+/* Deuda separada: consumo, préstamos y ajuste (pendiente anterior, o lo ya descontado en un último pago) */
+function deudaDetalle(wid,qid,C){
+  const w=S.workers[wid],idx=qIdxId(qid),L=C[wid]||[],ult=esUltimo(w,qid);
+  const sel=L.filter(x=>ult||x.due===idx);
+  const consumo=sum(sel.filter(x=>x.tipo==='Vale'),x=>x.monto),prestamos=sum(sel.filter(x=>x.tipo==='Préstamo'),x=>x.monto);
+  const ajuste=ult?-descontado(wid,qid):pendienteAnterior(wid,qid);
+  return {consumo:consumo,prestamos:prestamos,ajuste:ajuste,total:Math.max(0,consumo+prestamos+ajuste)};
 }
 function pendienteAnterior(wid,qid){
   const P=S.quincenas[qId(qFromIdx(qIdxId(qid)-1))],fp=P&&P.filas&&P.filas[wid];
@@ -764,10 +767,10 @@ function filasNomina(qid){
   const Q=S.quincenas[qid]||{filas:{}},C=cargosIndex();
   return trabajadoresEnQ(qid).map(w=>{
     const f=Q.filas[w.id]||{valor:null,origen:'',pagado:false};
-    if(f.pagado)return {w:w,f:f,valor:f.valor,deuda:f.deuda,desc:f.descontado,pago:f.pago,pagado:true,ultimo:!!f.ultimo};
-    const deuda=deudaPara(w.id,qid,C),valor=f.valor;
+    if(f.pagado)return {w:w,f:f,valor:f.valor,deuda:f.deuda,consumo:f.deudaConsumo,prestamos:f.deudaPrestamos,ajuste:f.deudaAjuste,desc:f.descontado,pago:f.pago,pagado:true,ultimo:!!f.ultimo};
+    const D=deudaDetalle(w.id,qid,C),deuda=D.total,valor=f.valor;
     const desc=valor==null?null:Math.min(deuda,valor);
-    return {w:w,f:f,valor:valor,deuda:deuda,desc:desc,pago:valor==null?null:valor-desc,pagado:false,ultimo:esUltimo(w,qid)};
+    return {w:w,f:f,valor:valor,deuda:deuda,consumo:D.consumo,prestamos:D.prestamos,ajuste:D.ajuste,desc:desc,pago:valor==null?null:valor-desc,pagado:false,ultimo:esUltimo(w,qid)};
   });
 }
 function vNomina(){
@@ -781,24 +784,27 @@ function vNomina(){
   h+='<section class="card"><div class="ntools"><div class="grp"><label class="fld"><span>Origen del pago para todos los pendientes</span><select id="d-nom-oall" data-draft="nom-oall" style="width:200px">'+optLugares(dv('nom-oall'),true)+'</select></label><button class="btn" data-act="nom-oall">Aplicar</button></div>'+
     '<div class="grp"><button class="btn" data-act="nom-excel">Exportar a Excel</button><button class="btn primary" data-act="nom-pagar-todos"'+(pend.length?'':' disabled')+'>Marcar todos como pagados</button></div></div>'+errHTML('nom')+
     (UI.msg.nom?'<div class="note info" style="margin-bottom:10px">'+esc(UI.msg.nom)+'</div>':'');
-  h+='<div class="tw"><table class="tbl nom"><thead><tr><th>#</th><th>Nombre</th><th>Cédula</th><th class="m">Valor de la quincena</th><th class="m">Deuda</th><th class="m">Total a pagar</th><th>Origen del pago</th><th>Estado</th></tr></thead><tbody>';
+  h+='<div class="tw"><table class="tbl nom"><thead><tr><th>#</th><th>Nombre</th><th>Cédula</th><th class="m">Valor de la quincena</th><th class="m">Consumo</th><th class="m">Préstamos</th><th class="m">Deuda total</th><th class="m">Total a pagar</th><th>Origen del pago</th><th>Estado</th></tr></thead><tbody>';
   rows.forEach((r,i)=>{
     const w=r.w,id=w.id;
-    const extra=(!r.pagado&&r.valor!=null&&r.deuda>r.valor)?'<span class="sub-l">Pasa '+fmt(r.deuda-r.valor)+' a la siguiente</span>':(r.pagado&&r.deuda>r.desc?'<span class="sub-l">Quedó pendiente '+fmt(r.deuda-r.desc)+'</span>':'');
+    const fm=v=>v==null?'<span class="muted">—</span>':fmt(v);
+    const aj=r.ajuste>0?'<span class="sub-l" style="color:var(--muted)">Incluye '+fmt(r.ajuste)+' pendiente anterior</span>':r.ajuste<0?'<span class="sub-l" style="color:var(--muted)">Menos '+fmt(-r.ajuste)+' ya descontado</span>':'';
+    const cols='<td class="m">'+fm(r.consumo)+'</td><td class="m">'+fm(r.prestamos)+'</td>';
+    const extra=aj+((!r.pagado&&r.valor!=null&&r.deuda>r.valor)?'<span class="sub-l">Pasa '+fmt(r.deuda-r.valor)+' a la siguiente</span>':(r.pagado&&r.deuda>r.desc?'<span class="sub-l">Quedó pendiente '+fmt(r.deuda-r.desc)+'</span>':''));
     h+='<tr class="'+(r.pagado?'off':'')+'"><td class="n">'+(i+1)+'</td><td>'+esc(w.nombre)+(r.ultimo?' <span class="chip acc">Último pago</span>':'')+'</td><td>'+(w.cedula?esc(w.cedula):'<span class="muted">—</span>')+'</td>';
     if(r.pagado){
-      h+='<td class="m">'+fmt(r.valor)+'</td><td class="m">'+fmt(r.deuda)+extra+'</td><td class="m"><b>'+fmt(r.pago)+'</b></td><td>'+esc(lugar(r.f.origen))+'</td>'+
+      h+='<td class="m">'+fmt(r.valor)+'</td>'+cols+'<td class="m">'+fmt(r.deuda)+extra+'</td><td class="m"><b>'+fmt(r.pago)+'</b></td><td>'+esc(lugar(r.f.origen))+'</td>'+
         '<td><span class="chip good">Pagado '+fechaCorta(r.f.pagadoEn)+'</span> '+(UI.confirm==='nomundo:'+id?'<button class="btn sm danger solid" data-act="nom-deshacer" data-w="'+id+'">Sí, deshacer</button> <button class="btn sm" data-act="no-borrar">No</button>':'<button class="btn sm ghost" data-act="nom-deshacer" data-w="'+id+'">Deshacer</button>')+'</td>';
     }else{
       h+='<td class="m">'+money('nv-'+id,'data-commit="nom-valor" data-w="'+id+'" aria-label="Valor de la quincena de '+esc(w.nombre)+'"',fmtIn(r.valor))+'</td>'+
-        '<td class="m">'+fmt(r.deuda)+extra+'</td><td class="m"><b>'+(r.pago==null?'<span class="muted">—</span>':fmt(r.pago))+'</b></td>'+
+        cols+'<td class="m">'+fmt(r.deuda)+extra+'</td><td class="m"><b>'+(r.pago==null?'<span class="muted">—</span>':fmt(r.pago))+'</b></td>'+
         '<td><select id="no-'+id+'" data-commit="nom-origen" data-w="'+id+'" aria-label="Origen del pago de '+esc(w.nombre)+'">'+optLugares(r.f.origen,true)+'</select></td>'+
         '<td><button class="btn sm" data-act="nom-pagar" data-w="'+id+'">Marcar pagado</button></td>';
     }
     h+='</tr>';
   });
-  const T={valor:sum(rows,r=>r.valor||0),deuda:sum(rows,r=>r.deuda||0),pago:sum(rows,r=>r.pago||0)};
-  h+='</tbody><tfoot><tr><td></td><td>Totales</td><td></td><td class="m">'+fmt(T.valor)+'</td><td class="m">'+fmt(T.deuda)+'</td><td class="m">'+fmt(T.pago)+'</td><td></td><td></td></tr></tfoot></table></div>';
+  const T={valor:sum(rows,r=>r.valor||0),consumo:sum(rows,r=>r.consumo||0),prestamos:sum(rows,r=>r.prestamos||0),deuda:sum(rows,r=>r.deuda||0),pago:sum(rows,r=>r.pago||0)};
+  h+='</tbody><tfoot><tr><td></td><td>Totales</td><td></td><td class="m">'+fmt(T.valor)+'</td><td class="m">'+fmt(T.consumo)+'</td><td class="m">'+fmt(T.prestamos)+'</td><td class="m">'+fmt(T.deuda)+'</td><td class="m">'+fmt(T.pago)+'</td><td></td><td></td></tr></tfoot></table></div>';
   if(!rows.length)h+='<div class="empty">No hay trabajadores activos.</div>';
   h+='<p class="small muted" style="margin-top:10px">Cada quincena arranca con el consumo en cero. Deuda = consumo de esta quincena + cuota de préstamo que le toca + lo que quedó pendiente de la quincena anterior. Si la deuda supera el valor, se paga $0 y el resto pasa a la siguiente quincena. Los registros de quincenas pasadas se conservan.</p></section>';
   return h;
@@ -1131,8 +1137,8 @@ function pagar(){
   if(necesitaCaja&&!jC)return err('pago','Elige la jornada a la que pertenece el pago desde la Caja.');
   ids.forEach(id=>{
     const f=Q.filas[id],w=S.workers[id];if(!f||f.pagado||f.valor==null||!f.origen)return;
-    const ult=esUltimo(w,qid),deuda=deudaPara(id,qid,C),desc=Math.min(deuda,f.valor),pago=f.valor-desc;
-    Object.assign(f,{pagado:true,pagadoEn:fecha,deuda:deuda,descontado:desc,pago:pago,ultimo:ult,egresoId:null});
+    const ult=esUltimo(w,qid),D=deudaDetalle(id,qid,C),deuda=D.total,desc=Math.min(deuda,f.valor),pago=f.valor-desc;
+    Object.assign(f,{pagado:true,pagadoEn:fecha,deuda:deuda,deudaConsumo:D.consumo,deudaPrestamos:D.prestamos,deudaAjuste:D.ajuste,descontado:desc,pago:pago,ultimo:ult,egresoId:null});
     if(pago>0)(grupos[f.origen]=grupos[f.origen]||[]).push([id,pago]);
     log('Pagó','Nómina · '+qLabel(qid)+' · '+w.nombre,'','Valor '+fmt(f.valor)+' · Deuda '+fmt(deuda)+' · Descontado '+fmt(desc)+' · Pagado '+fmt(pago)+' desde '+lugar(f.origen)+(ult?' · Último pago':''));
     if(ult){w.activo=false;w.retiro.q=qid;w.retiro.completado=fecha;saveWorker(w);log('Retiró','Trabajador · '+w.nombre,'Último pago pendiente','Retirado');}
@@ -1163,7 +1169,7 @@ function deshacerPago(wid){
     if(e.valor<=0){delEgnom(e.id);log('Borró','Egreso Nómina · '+qLabel(qid)+' · desde '+lugar(e.origen),an,'');}else{saveEgnom(e);log('Editó','Egreso Nómina · '+qLabel(qid)+' · desde '+lugar(e.origen),an,fmt(e.valor));}}
   if(f.ultimo&&w){w.activo=true;w.retiro=w.retiro||{q:qid};w.retiro.completado=null;saveWorker(w);log('Editó','Trabajador · '+w.nombre,'Retirado','Último pago pendiente');}
   log('Deshizo pago','Nómina · '+qLabel(qid)+' · '+(w?w.nombre:wid),'Pagado '+fmt(f.pago)+' desde '+lugar(f.origen),'Pendiente');
-  ['pagado','pagadoEn','deuda','descontado','pago','ultimo','egresoId'].forEach(k=>delete f[k]);f.pagado=false;
+  ['pagado','pagadoEn','deuda','deudaConsumo','deudaPrestamos','deudaAjuste','descontado','pago','ultimo','egresoId'].forEach(k=>delete f[k]);f.pagado=false;
   saveQuincena(qid);render();
 }
 function nombreArchivo(s){return s.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^\w.-]+/g,'_');}
@@ -1171,12 +1177,12 @@ async function exportarExcel(){
   if(typeof XLSX==='undefined'){UI.err.nom='No se pudo cargar el generador de Excel. Revisa la conexión y recarga la página.';return render();}
   if(!downloads){UI.err.nom='Las descargas no están disponibles en esta vista.';return render();}
   const qid=UI.q,rows=filasNomina(qid);
-  const aoa=[['Panadería Barcelona · Nómina · '+qLabel(qid)],[],['Nombre','Cédula','Valor de la quincena','Deuda','Total pagado']];
-  rows.forEach(r=>aoa.push([r.w.nombre,r.w.cedula||'',r.valor==null?0:r.valor,r.deuda||0,r.pago==null?0:r.pago]));
-  aoa.push(['Totales','',sum(rows,r=>r.valor||0),sum(rows,r=>r.deuda||0),sum(rows,r=>r.pago||0)]);
+  const aoa=[['Panadería Barcelona · Nómina · '+qLabel(qid)],[],['Nombre','Cédula','Valor de la quincena','Consumo','Préstamos','Deuda total','Total pagado']];
+  rows.forEach(r=>aoa.push([r.w.nombre,r.w.cedula||'',r.valor==null?0:r.valor,r.consumo||0,r.prestamos||0,r.deuda||0,r.pago==null?0:r.pago]));
+  aoa.push(['Totales','',sum(rows,r=>r.valor||0),sum(rows,r=>r.consumo||0),sum(rows,r=>r.prestamos||0),sum(rows,r=>r.deuda||0),sum(rows,r=>r.pago||0)]);
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:28},{wch:16},{wch:20},{wch:16},{wch:16}];
-  for(let r=3;r<aoa.length;r++)for(let c=2;c<=4;c++){const ref=XLSX.utils.encode_cell({r:r,c:c});if(ws[ref])ws[ref].z='"$"#,##0';}
+  ws['!cols']=[{wch:28},{wch:16},{wch:20},{wch:14},{wch:14},{wch:14},{wch:16}];
+  for(let r=3;r<aoa.length;r++)for(let c=2;c<=6;c++){const ref=XLSX.utils.encode_cell({r:r,c:c});if(ws[ref])ws[ref].z='"$"#,##0';}
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Nómina');
   const buf=XLSX.write(wb,{type:'array',bookType:'xlsx'});
   try{await downloads.save({filename:'Nomina_'+nombreArchivo(qid)+'.xlsx',data:new Blob([buf])});UI.msg.nom='Nómina exportada.';}
