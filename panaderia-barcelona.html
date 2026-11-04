@@ -716,15 +716,15 @@ function hojaDia(f){
   const ant=arrastre(f),m=movDia(f);
   let tDat=0,tEf=0;if(j)[1,2,3].forEach(n=>{const t=j.turnos[n];tEf+=t.ingresos.efectivo||0;tDat+=ingresosDinero(t)-(t.ingresos.efectivo||0);});
   const H={fecha:f,titulo:'Jornada del '+fechaLarga(f)+' · '+fechaCorta(addDays(f,-1))+' 10:00 pm → '+fechaCorta(f)+' 10:00 pm',
-    materia:cat('produccion'),nomina:cat('nomina')+nomAuto,imprevistos:cat('imprevistos'),aseo:cat('aseo'),fabian:cat('fabian'),
-    otros:cat('gastos')+cat('arriendo')+cat('servicios')+cat('prestamo'),egresosDia:sum(todos,e=>e.valor)+nomAuto,
+    porCat:{},egresosDia:sum(todos,e=>e.valor)+nomAuto,
     datDia:m.dat,efDia:m.ef,ventaTotal:tDat+tEf,egDat:m.egDat,egEf:m.egEf,
     datAnt:ant.dat,datAct:ant.dat+m.dat-m.egDat,efAnt:ant.ef,efAct:ant.ef+m.ef-m.egEf};
+  CATS_MANUAL.forEach(c=>H.porCat[c]=cat(c)+(c==='nomina'?nomAuto:0));
   return H;
 }
 function hojaSecciones(H){
-  const eg=[['Materia prima',H.materia],['Nómina',H.nomina],['Imprevistos',H.imprevistos],['Aseo',H.aseo],['Don Fabián',H.fabian]];
-  if(H.otros)eg.push(['Otros (gastos, arriendo, servicios y préstamos)',H.otros]);
+  const NOMBRE={produccion:'Materia prima',prestamo:'Préstamos a trabajadores'};
+  const eg=CATS_MANUAL.map(c=>[NOMBRE[c]||CATS[c],H.porCat[c]]);
   eg.push(['Egresos del día',H.egresosDia,true]);
   return [
     {t:'Venta del día',rows:[['Datáfono del día',H.datDia],['Efectivo del día',H.efDia],['Venta total',H.ventaTotal,true]]},
