@@ -214,6 +214,7 @@ dl.calc div.tot dt{color:var(--ink);font-weight:600} dl.calc div.tot dd{font-wei
 .hoja .sec b.t{display:block;background:#efefef;padding:4px 8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
 .hoja .row{display:flex;justify-content:space-between;padding:3px 8px;border-top:1px solid #e6e6e6;font-variant-numeric:tabular-nums}
 .hoja .row.tot{font-weight:700;background:#f7f7f7}
+.hoja .row.det{padding-left:18px;color:#555;font-size:.72rem}
 .hoja .cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
 .loading{padding:60px 0;text-align:center;color:var(--muted)}
 
@@ -722,6 +723,15 @@ function hojaDia(f){
   CATS_MANUAL.forEach(c=>H.porCat[c]=cat(c)+(c==='nomina'?nomAuto:0));
   return H;
 }
+/* Lo que se pagó desde Davivienda, Bancolombia o Bold en la jornada, uno por uno */
+function egresosDatafonoDetalle(f){
+  const out=[],j=S.jornadas[f],es=e=>CTAS_DATAFONO.indexOf(e.origen)>=0;
+  const lab=e=>lugar(e.origen)+': '+(e.cat==='produccion'?'Materia prima':CATS[e.cat])+(e.cat==='prestamo'&&e.workerId?' · '+nombreW(e.workerId):'')+(e.desc?' · '+e.desc:'');
+  if(j)[1,2,3].forEach(n=>j.turnos[n].egresos.forEach(e=>{if(es(e))out.push([lab(e),e.valor]);}));
+  egDia(f).forEach(e=>{if(es(e))out.push([lab(e),e.valor]);});
+  egnomDe(f).forEach(e=>{if(es(e))out.push([lugar(e.origen)+': Nómina · pago '+qCorta(e.quincena),e.valor]);});
+  return out;
+}
 function hojaSecciones(H){
   const NOMBRE={produccion:'Materia prima',prestamo:'Préstamos a trabajadores'};
   const eg=CATS_MANUAL.map(c=>[NOMBRE[c]||CATS[c],H.porCat[c]]);
@@ -729,7 +739,7 @@ function hojaSecciones(H){
   return [
     {t:'Venta del día',rows:[['Datáfono del día',H.datDia],['Efectivo del día',H.efDia],['Venta total',H.ventaTotal,true]]},
     {t:'Egresos del día',rows:eg},
-    {t:'Datáfono',rows:[['Datáfono anterior',H.datAnt],['Datáfono del día',H.datDia],['Egresos del datáfono',H.egDat],['Datáfono actual',H.datAct,true]]},
+    {t:'Datáfono',rows:[['Datáfono anterior',H.datAnt],['Datáfono del día',H.datDia]].concat(egresosDatafonoDetalle(H.fecha).map(d=>[d[0],d[1],false,true])).concat([['Egresos del datáfono',H.egDat],['Datáfono actual',H.datAct,true]])},
     {t:'Efectivo',rows:[['Efectivo anterior',H.efAnt],['Efectivo del día',H.efDia],['Egresos en efectivo',H.egEf],['Efectivo actual',H.efAct,true]]}
   ];
 }
@@ -742,13 +752,17 @@ async function imprimirPDF(){
   const W=215.9,M=18;let y=22;const pf=v=>fmt(v).replace('−','-'),pt=t=>String(t).replace(/→/g,'a').replace(/−/g,'-');
   doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('Panadería Barcelona',M,y);y+=7;
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(90);doc.text(doc.splitTextToSize(pt(H.titulo),W-2*M),M,y);y+=10;doc.setTextColor(0);
-  const seccion=(S2,x,w,y0)=>{let yy=y0;
-    doc.setFillColor(235,235,235);doc.rect(x,yy,w,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.text(S2.t.toUpperCase(),x+3,yy+4.8);yy+=7;
-    S2.rows.forEach(r=>{doc.setFont('helvetica',r[2]?'bold':'normal');doc.setFontSize(r[2]?11:10.5);
-      if(r[2]){doc.setFillColor(246,246,246);doc.rect(x,yy,w,8,'F');}
-      doc.text(r[0],x+3,yy+5.6);doc.text(pf(r[1]),x+w-3,yy+5.6,{align:'right'});
-      doc.setDrawColor(215);doc.line(x,yy+8,x+w,yy+8);yy+=8;});
-    doc.setDrawColor(190);doc.rect(x,y0,w,yy-y0);return yy;};
+  const seccion=(S2,x,w,y0)=>{let yy=y0,top=y0;
+    doc.setFillColor(235,235,235);doc.rect(x,yy,w,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(0);doc.text(S2.t.toUpperCase(),x+3,yy+4.8);yy+=7;
+    S2.rows.forEach(r=>{const det=!!r[3],h=det?6.5:8;
+      if(yy+h>268){doc.setDrawColor(190);doc.rect(x,top,w,yy-top);doc.addPage();yy=top=18;}
+      doc.setFont('helvetica',r[2]?'bold':'normal');doc.setFontSize(r[2]?11:det?8.5:10.5);doc.setTextColor(det?90:0);
+      if(r[2]){doc.setFillColor(246,246,246);doc.rect(x,yy,w,h,'F');}
+      let lbl=pt(r[0]);const maxW=w-(det?34:30);
+      if(doc.getTextWidth(lbl)>maxW){while(lbl.length>3&&doc.getTextWidth(lbl+'...')>maxW)lbl=lbl.slice(0,-1);lbl+='...';}
+      doc.text(lbl,x+(det?7:3),yy+h*0.7);doc.text(pf(r[1]),x+w-3,yy+h*0.7,{align:'right'});doc.setTextColor(0);
+      doc.setDrawColor(det?232:215);doc.line(x,yy+h,x+w,yy+h);yy+=h;});
+    doc.setDrawColor(190);doc.rect(x,top,w,yy-top);return yy;};
   y=seccion(secs[0],M,W-2*M,y)+8;
   const cw=(W-2*M-8)/2;
   seccion(secs[1],M,cw,y);
@@ -828,8 +842,8 @@ function vModal(){
   }
   if(M.tipo==='imprimir'){
     const H=hojaDia(UI.fecha);
-    const row=(l,v,tot)=>'<div class="row'+(tot?' tot':'')+'"><span>'+esc(l)+'</span><span>'+fmt(v)+'</span></div>';
-    const secs=hojaSecciones(H).map(S2=>'<div class="sec"><b class="t">'+esc(S2.t)+'</b>'+S2.rows.map(r=>row(r[0],r[1],r[2])).join('')+'</div>');
+    const row=(l,v,tot,det)=>'<div class="row'+(tot?' tot':'')+(det?' det':'')+'"><span>'+esc(l)+'</span><span>'+fmt(v)+'</span></div>';
+    const secs=hojaSecciones(H).map(S2=>'<div class="sec"><b class="t">'+esc(S2.t)+'</b>'+S2.rows.map(r=>row(r[0],r[1],r[2],r[3])).join('')+'</div>');
     return '<div class="ov" data-act="modal-fondo"><div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="m-t">'+
       '<h3 id="m-t">Imprimir jornada</h3>'+
       '<div class="hoja"><div><h4>Panadería Barcelona</h4><div class="sub">'+esc(H.titulo)+'</div></div>'+secs[0]+'<div class="cols">'+secs[1]+'<div style="display:flex;flex-direction:column;gap:10px">'+secs[2]+secs[3]+'</div></div></div>'+
